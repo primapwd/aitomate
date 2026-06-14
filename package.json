@@ -1,0 +1,13 @@
+{
+  "name": "aitomate-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter aitomate-extension dev",
+    "build": "pnpm --filter aitomate-extension build",
+    "build:firefox": "pnpm --filter aitomate-extension build:firefox",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "packageManager": "pnpm@11.5.2"
+}

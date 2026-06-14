@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0",
+  "meta": {
+    "name": "Checkout Flow - Guest User",
+    "description": "Validates guest checkout with random product",
+    "baseUrl": "{{BASE_URL}}",
+    "tags": ["checkout", "guest"]
+  },
+  "setup": {
+    "scenarioRef": "login-as-student"
+  },
+  "dataSources": [
+    {
+      "name": "app_users",
+      "type": "database",
+      "connectorRef": "mysql-primary"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step-1",
+      "action": "navigate",
+      "url": "/checkout"
+    },
+    {
+      "id": "step-2",
+      "action": "fill",
+      "selector": { "strategy": "testid", "value": "email-input" },
+      "resolver": {
+        "type": "database",
+        "dataSourceRef": "app_users",
+        "query": "SELECT email FROM users WHERE role = :role LIMIT 1",
+        "params": { "role": "student" }
+      }
+    },
+    {
+      "id": "step-3",
+      "action": "fill",
+      "selector": { "strategy": "css", "value": "#promo-code" },
+      "resolver": {
+        "type": "dynamic",
+        "mode": "array",
+        "values": ["PROMO10", "PROMO20", "NOPROMO"]
+      }
+    },
+    {
+      "id": "step-4",
+      "action": "fill",
+      "selector": {
+        "strategy": "css",
+        "value": "textarea[name=notes]",
+        "shadowPath": ["checkout-widget", "note-editor"],
+        "framePath": []
+      },
+      "resolver": {
+        "type": "dynamic",
+        "mode": "ai",
+        "prompt": "short delivery note, max 15 words, casual tone",
+        "provider": "configured-default"
+      }
+    },
+    {
+      "id": "step-5",
+      "action": "click",
+      "selector": { "strategy": "text", "value": "Place Order" }
+    },
+    {
+      "id": "step-6",
+      "action": "assert",
+      "assertion": "elementVisible",
+      "selector": { "strategy": "testid", "value": "order-success-banner" }
+    },
+    {
+      "id": "step-7",
+      "action": "assert",
+      "assertion": "urlMatches",
+      "pattern": "**/orders/*"
+    }
+  ]
+}
