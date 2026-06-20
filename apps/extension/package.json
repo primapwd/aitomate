@@ -11,6 +11,8 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "prepare:wxt": "wxt prepare",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "wxt prepare && tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +25,7 @@
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.2.2",
     "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
     "wxt": "^0.20.27"
   }
 }

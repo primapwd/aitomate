@@ -10,9 +10,10 @@ decision changes; bump its version and changelog.
 
 ## Status
 
-- Done: T1.1 (scaffold), T1.2 (scenario schema + tests).
-- Next: T1.3 (encrypted vault), T1.4 (popup/side-panel shell), T1.5 (WxtVitest +
-  Playwright E2E harness).
+- Done: T1.1 (scaffold), T1.2 (scenario schema + tests), T1.3 (encrypted vault
+  in `apps/extension/lib/vault/` + Vitest/WxtVitest infra).
+- Next: T1.4 (popup/side-panel shell), T1.5 (Playwright E2E smoke harness —
+  unit-test infra already in place).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -39,6 +40,8 @@ apps/extension/          WXT app (React 19 + TS). WXT conventions are load-beari
     background.ts        service worker — runner state machine (T2.2)
     content.ts           recorder + playback DOM layer (T2.1, T2.4)
     popup/               React popup UI
+  lib/vault/             encrypted secrets vault (AES-GCM + PBKDF2; entry names
+                         are plaintext by design — see module doc)
   wxt.config.ts          manifest config (permissions, modules)
 packages/schema/         @aitomate/schema — Zod schemas + TS types (THE contract)
   src/                   selector, resolver, assertion, step, scenario, parse
