@@ -46,8 +46,6 @@ Record in browser ──► .aitomate.json in your repo ──► Anyone replays
                           └─ DB values: local read-only bridge (npx aitomate-bridge)
 ```
 
-Full product spec and architecture: [`aitomate-spec-kit.md`](./aitomate-spec-kit.md).
-
 ## Development
 
 Requirements: Node ≥ 22, pnpm ≥ 11.
@@ -69,7 +67,6 @@ Load the built extension: `chrome://extensions` → enable Developer mode →
 ```
 apps/extension/     WXT extension app (React + TypeScript)
 packages/schema/    @aitomate/schema — Zod schemas for scenario files (the contract)
-aitomate-spec-kit.md  Product spec & architecture (source of truth)
 AGENTS.md           Guide for AI coding agents working on this repo
 ```
 
@@ -86,8 +83,7 @@ AGENTS.md           Guide for AI coding agents working on this repo
 
 ## Contributing
 
-The spec (`aitomate-spec-kit.md`) is the source of truth — read it before
-proposing changes. AI coding agents should start with [`AGENTS.md`](./AGENTS.md).
+AI coding agents should start with [`AGENTS.md`](./AGENTS.md).
 
 ## License
 

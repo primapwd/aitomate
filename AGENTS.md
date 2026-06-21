@@ -11,9 +11,12 @@ decision changes; bump its version and changelog.
 ## Status
 
 - Done: T1.1 (scaffold), T1.2 (scenario schema + tests), T1.3 (encrypted vault
-  in `apps/extension/lib/vault/` + Vitest/WxtVitest infra).
-- Next: T1.4 (popup/side-panel shell), T1.5 (Playwright E2E smoke harness —
-  unit-test infra already in place).
+  in `apps/extension/lib/vault/` + Vitest/WxtVitest infra), T1.4 (popup +
+  side-panel shell with Build/Run/Settings nav in `components/AppShell.tsx`;
+  side-panel opened via popup button → `lib/sidepanel.ts` — NOT
+  `setPanelBehavior`, which is dead when `default_popup` is set; Build
+  Simple/Advanced toggle persisted via `lib/ui-prefs.ts`).
+- Next: T1.5 (Playwright E2E smoke harness — unit-test infra already in place).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
