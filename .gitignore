@@ -9,3 +9,7 @@ stats-*.json
 .env
 .env.*
 web-ext.config.ts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

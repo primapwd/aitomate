@@ -13,6 +13,7 @@
     "prepare:wxt": "wxt prepare",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "wxt build && playwright test",
     "typecheck": "wxt prepare && tsc --noEmit"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.2.2",

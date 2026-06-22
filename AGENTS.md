@@ -15,8 +15,12 @@ decision changes; bump its version and changelog.
   side-panel shell with Build/Run/Settings nav in `components/AppShell.tsx`;
   side-panel opened via popup button → `lib/sidepanel.ts` — NOT
   `setPanelBehavior`, which is dead when `default_popup` is set; Build
-  Simple/Advanced toggle persisted via `lib/ui-prefs.ts`).
-- Next: T1.5 (Playwright E2E smoke harness — unit-test infra already in place).
+  Simple/Advanced toggle persisted via `lib/ui-prefs.ts`), T1.5 (Playwright
+  E2E smoke harness in `apps/extension/e2e/` — chromium persistent context
+  via `--load-extension`, needs `--headless=new` for the MV3 service worker
+  to start headless; `pnpm test:e2e` builds then runs it; root `pnpm test`
+  runs Vitest across workspaces then e2e).
+- Next: Milestone 1 Phase 2 — T2.1 (content-script recorder).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -29,7 +33,8 @@ Run from repo root (pnpm workspaces):
 | `pnpm dev` | WXT dev mode (Chrome, HMR) |
 | `pnpm build` | production build → `apps/extension/.output/chrome-mv3/` |
 | `pnpm build:firefox` | Firefox build → `.output/firefox-mv2/` |
-| `pnpm test` | all workspace tests (Vitest) |
+| `pnpm test` | all workspace tests (Vitest) + Playwright E2E smoke |
+| `pnpm --filter aitomate-extension test:e2e` | build + run E2E smoke only |
 | `pnpm typecheck` | `tsc --noEmit` everywhere (runs `wxt prepare` first) |
 
 Load unpacked: `chrome://extensions` → Developer mode → Load unpacked →
@@ -89,9 +94,15 @@ Planned (not yet created): `packages/bridge` (M2, local DB sidecar), `examples/`
 
 - Unit: Vitest per package (`pnpm test`). Schema package: valid + invalid
   fixture per schema variant.
-- Extension unit tests (once T1.5 lands): Vitest + `WxtVitest` plugin from
-  `wxt/testing` (fake `browser.*` APIs via @webext-core/fake-browser).
-- E2E smoke (T1.5): Playwright chromium persistent context loading the built
-  extension. Chromium-only; Firefox is a manual pre-release check.
+- Extension unit tests: Vitest + `WxtVitest` plugin from `wxt/testing` (fake
+  `browser.*` APIs via @webext-core/fake-browser); `vitest.config.ts` excludes
+  `e2e/**` so Playwright specs don't get picked up by Vitest.
+- E2E smoke: Playwright, `apps/extension/e2e/`, chromium persistent context
+  loading the built extension via `--load-extension` (needs `--headless=new`
+  for the MV3 background service worker to start under headless Chromium).
+  Covers: extension loads (manifest + service worker), popup renders the
+  Build/Run/Settings shell. Chromium-only; Firefox is a manual pre-release
+  check. A third smoke case — a bundled static-only scenario running green
+  against a local demo page — lands once the runner + a demo target exist.
 - Definition of done for engine tasks: unit tests included, `pnpm test`,
   `pnpm typecheck`, and `pnpm build` all pass.

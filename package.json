@@ -6,7 +6,8 @@
     "dev": "pnpm --filter aitomate-extension dev",
     "build": "pnpm --filter aitomate-extension build",
     "build:firefox": "pnpm --filter aitomate-extension build:firefox",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && pnpm test:e2e",
+    "test:e2e": "pnpm --filter aitomate-extension test:e2e",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "packageManager": "pnpm@11.5.2"

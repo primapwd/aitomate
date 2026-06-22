@@ -6,5 +6,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // e2e/ is Playwright's suite (own runner, own config), not Vitest's.
+    exclude: ['**/node_modules/**', 'e2e/**'],
   },
 });
