@@ -19,8 +19,17 @@ decision changes; bump its version and changelog.
   E2E smoke harness in `apps/extension/e2e/` — chromium persistent context
   via `--load-extension`, needs `--headless=new` for the MV3 service worker
   to start headless; `pnpm test:e2e` builds then runs it; root `pnpm test`
-  runs Vitest across workspaces then e2e).
-- Next: Milestone 1 Phase 2 — T2.1 (content-script recorder).
+  runs Vitest across workspaces then e2e), T2.1 (content-script recorder in
+  `lib/recorder/` + `entrypoints/content.ts` — selector generation, shadow/
+  frame path, CSRF exclusion, and the pause-on-navigate/new-tab session
+  machine are pure and unit-tested; DOM wiring and background message
+  routing are integration glue, exercised via the build + e2e smoke, not
+  unit tests. Recordings persist per tab in `storage.session` via
+  `lib/recorder/store.ts` — worker memory alone dies with the MV3
+  service worker's ~30s idle teardown).
+- Next: T2.2 (background runner state machine), T2.6 (Build view step editor
+  — currently the recorder has no UI; steps are retrievable via
+  `aitomate:recorder:get-steps`).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -45,9 +54,13 @@ Load unpacked: `chrome://extensions` → Developer mode → Load unpacked →
 ```
 apps/extension/          WXT app (React 19 + TS). WXT conventions are load-bearing:
   entrypoints/           file locations here define the manifest
-    background.ts        service worker — runner state machine (T2.2)
-    content.ts           recorder + playback DOM layer (T2.1, T2.4)
+    background.ts        service worker — recorder session store (T2.1) +
+                         runner state machine (T2.2)
+    content.ts           recorder DOM layer (T2.1) + playback (T2.4)
     popup/               React popup UI
+  lib/recorder/           selector generation (testid>id>aria>css>text),
+                         shadow/frame path, CSRF/hidden exclusion, pause-on-
+                         navigate/new-tab session machine, message protocol
   lib/vault/             encrypted secrets vault (AES-GCM + PBKDF2; entry names
                          are plaintext by design — see module doc)
   wxt.config.ts          manifest config (permissions, modules)

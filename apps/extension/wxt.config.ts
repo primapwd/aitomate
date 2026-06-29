@@ -5,6 +5,6 @@ export default defineConfig({
   manifest: {
     name: 'Aitomate',
     description: 'Collaborative, AI-assisted test automation for any web app',
-    permissions: ['storage', 'activeTab', 'tabs'],
+    permissions: ['storage', 'activeTab', 'tabs', 'webNavigation'],
   },
 });
