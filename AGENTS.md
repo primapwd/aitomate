@@ -26,10 +26,17 @@ decision changes; bump its version and changelog.
   routing are integration glue, exercised via the build + e2e smoke, not
   unit tests. Recordings persist per tab in `storage.session` via
   `lib/recorder/store.ts` — worker memory alone dies with the MV3
-  service worker's ~30s idle teardown).
-- Next: T2.2 (background runner state machine), T2.6 (Build view step editor
-  — currently the recorder has no UI; steps are retrievable via
-  `aitomate:recorder:get-steps`).
+  service worker's ~30s idle teardown), T2.2 (runner in `lib/runner/` +
+  background orchestration loop — state machine, per-step retry/backoff,
+  smart-wait via MutationObserver, per-tab run store in `storage.session`;
+  step execution in `entrypoints/content.ts` is frame-gated: with
+  `allFrames: true` only the frame matching the step selector's `framePath`
+  may respond, or a wrong-frame "not found" wins the sendMessage race).
+- Next: T2.3 (value resolvers: static + dynamic array), T2.4 (playback
+  hardening: native-setter fill for React/Vue controlled inputs, upload),
+  T2.6 (Build view step editor — recorder/runner still have no UI; steps
+  retrievable via `aitomate:recorder:get-steps`, runs driven via
+  `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands

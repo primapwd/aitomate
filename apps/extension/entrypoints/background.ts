@@ -1,4 +1,4 @@
-import type { Step } from '@aitomate/schema';
+import type { Scenario, Step } from '@aitomate/schema';
 import type {
   RecorderCommand,
   RecorderEvent,
@@ -12,18 +12,33 @@ import {
   saveRecording,
   type TabRecording,
 } from '@/lib/recorder/store';
+import type { RunnerCommand, RunnerStateMessage, StepResult } from '@/lib/runner/messages';
+import {
+  initialRunnerState,
+  reduceRunnerState,
+  type RunnerSessionState,
+} from '@/lib/runner/runner-session';
+import { executeStepWithRetry } from '@/lib/runner/step-executor';
+import { clearRun, getRun, saveRun } from '@/lib/runner/store';
 
-// Scenario runner state machine (T2.2) will live alongside this. For now,
-// background only tracks recorder sessions (FR-1) — one per tab, persisted
-// in storage.session (see lib/recorder/store.ts) so an MV3 service-worker
-// teardown mid-recording doesn't lose the session, cleared when the tab
-// closes.
+/**
+ * Recorder (T1.x) and runner (T2.2) live side by side in the same service
+ * worker. They share no internal state; each owns its own session machine and
+ * store. The message listener dispatches by type prefix.
+ */
+
+// ─────────────────────────────────────────────
+// Recorder helpers (unchanged from T1.x)
+// ─────────────────────────────────────────────
 
 function nextStepId(recording: TabRecording): string {
   return `step-${recording.steps.length + 1}`;
 }
 
-async function broadcastState(tabId: number, state: RecorderSessionState): Promise<void> {
+async function broadcastRecorderState(
+  tabId: number,
+  state: RecorderSessionState,
+): Promise<void> {
   const message: RecorderStateMessage = { type: 'aitomate:recorder:state', state };
   try {
     await browser.tabs.sendMessage(tabId, message);
@@ -32,6 +47,120 @@ async function broadcastState(tabId: number, state: RecorderSessionState): Promi
   }
 }
 
+// ─────────────────────────────────────────────
+// Runner control signals (in-memory, per-tab)
+// ─────────────────────────────────────────────
+
+interface RunControl {
+  stopped: boolean;
+  pausePromise: Promise<void> | null;
+  resume: (() => void) | null;
+}
+
+const runControl = new Map<number, RunControl>();
+
+function getControl(tabId: number): RunControl {
+  let ctrl = runControl.get(tabId);
+  if (!ctrl) {
+    ctrl = { stopped: false, pausePromise: null, resume: null };
+    runControl.set(tabId, ctrl);
+  }
+  return ctrl;
+}
+
+function deleteControl(tabId: number): void {
+  runControl.delete(tabId);
+}
+
+async function broadcastRunnerState(
+  tabId: number,
+  state: RunnerSessionState,
+): Promise<void> {
+  const message: RunnerStateMessage = { type: 'aitomate:runner:state', state };
+  try {
+    await browser.tabs.sendMessage(tabId, message);
+  } catch {
+    // UI panel may not be open in this tab — fine.
+  }
+}
+
+/**
+ * Main runner orchestration loop. Runs asynchronously in the background,
+ * driven by step-executor.ts for each individual step. Checks pause/stop
+ * signals between steps.
+ */
+async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
+  // Fresh control per run — a stale one (e.g. stopped=true left by a STOP on
+  // an errored run) must not kill this run on its first iteration.
+  const ctrl: RunControl = { stopped: false, pausePromise: null, resume: null };
+  runControl.set(tabId, ctrl);
+
+  // Initialise runner session
+  const run = await getRun(tabId);
+  run.session = reduceRunnerState(initialRunnerState, {
+    type: 'PLAY',
+    totalSteps: scenario.steps.length,
+  });
+  run.scenario = scenario;
+  run.results = [];
+  await saveRun(tabId, run);
+  await broadcastRunnerState(tabId, run.session);
+
+  for (let i = 0; i < scenario.steps.length; i++) {
+    // Check stop signal
+    if (ctrl.stopped) break;
+
+    // Check pause signal — wait until resume or stop
+    if (ctrl.pausePromise) {
+      await ctrl.pausePromise;
+      if (ctrl.stopped) break;
+    }
+
+    const step: Step = scenario.steps[i];
+
+    // Point the UI at the step about to execute; STEP_COMPLETE advances the
+    // machine only after the step actually passed.
+    run.session = { ...run.session, currentStepIndex: i };
+    await saveRun(tabId, run);
+    await broadcastRunnerState(tabId, run.session);
+
+    const result: StepResult = await executeStepWithRetry(tabId, step, {
+      stopped: () => ctrl.stopped,
+    });
+
+    run.results.push(result);
+
+    if (!result.passed) {
+      run.session = reduceRunnerState(run.session, {
+        type: 'STEP_FAIL',
+        error: result.error ?? 'Step failed',
+      });
+      await saveRun(tabId, run);
+      await broadcastRunnerState(tabId, run.session);
+      break;
+    }
+
+    // Step passed — advance state machine
+    run.session = reduceRunnerState(run.session, { type: 'STEP_COMPLETE' });
+    await saveRun(tabId, run);
+    await broadcastRunnerState(tabId, run.session);
+  }
+
+  // If loop completed without error and not stopped, the last STEP_COMPLETE
+  // already set status to 'done'. If stopped, ensure idle state.
+  if (ctrl.stopped) {
+    run.session = { ...initialRunnerState };
+    await saveRun(tabId, run);
+    await broadcastRunnerState(tabId, run.session);
+  }
+
+  deleteControl(tabId);
+}
+
+// ─────────────────────────────────────────────
+// Background service worker entry
+// ─────────────────────────────────────────────
+
 export default defineBackground(() => {
   console.log('[aitomate] background service worker started', {
     id: browser.runtime.id,
@@ -39,9 +168,15 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener(
     (
-      message: RecorderCommand | RecorderEvent,
+      message:
+        | RecorderCommand
+        | RecorderEvent
+        | RunnerCommand,
       sender,
-    ): Promise<RecorderStepsResponse | RecorderSessionState | void> | void => {
+    ):
+      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | void>
+      | void => {
+      // ── Recorder handlers (T1.x) ──
       switch (message.type) {
         case 'aitomate:recorder:step-captured': {
           const tabId = sender.tab?.id;
@@ -69,7 +204,7 @@ export default defineBackground(() => {
               originUrl: tab.url ?? '',
             });
             await saveRecording(message.tabId, recording);
-            await broadcastState(message.tabId, recording.session);
+            await broadcastRecorderState(message.tabId, recording.session);
           })();
 
         case 'aitomate:recorder:stop':
@@ -77,7 +212,7 @@ export default defineBackground(() => {
             const recording = await getRecording(message.tabId);
             recording.session = reduceSession(recording.session, { type: 'STOP' });
             await saveRecording(message.tabId, recording);
-            await broadcastState(message.tabId, recording.session);
+            await broadcastRecorderState(message.tabId, recording.session);
           })();
 
         case 'aitomate:recorder:resume':
@@ -89,7 +224,7 @@ export default defineBackground(() => {
               originUrl: tab.url,
             });
             await saveRecording(message.tabId, recording);
-            await broadcastState(message.tabId, recording.session);
+            await broadcastRecorderState(message.tabId, recording.session);
           })();
 
         case 'aitomate:recorder:get-steps':
@@ -97,21 +232,78 @@ export default defineBackground(() => {
             steps: recording.steps,
           }));
 
+        // ── Runner handlers (T2.2) ──
+
+        case 'aitomate:runner:play':
+          return (async () => {
+            const run = await getRun(message.tabId);
+            // "playing" only blocks a new run while its loop is actually
+            // alive (control present). A persisted "playing" with no control
+            // means an MV3 worker teardown killed the loop — allow a restart.
+            if (run.session.status === 'playing' && runControl.has(message.tabId)) {
+              return;
+            }
+            // Fire-and-forget: the runner loop runs asynchronously.
+            void runSequence(message.tabId, message.scenario);
+          })();
+
+        case 'aitomate:runner:pause':
+          return (async () => {
+            const run = await getRun(message.tabId);
+            if (run.session.status !== 'playing') return;
+            const ctrl = getControl(message.tabId);
+            ctrl.pausePromise = new Promise((resolve) => {
+              ctrl.resume = resolve;
+            });
+            run.session = reduceRunnerState(run.session, { type: 'PAUSE' });
+            await saveRun(message.tabId, run);
+            await broadcastRunnerState(message.tabId, run.session);
+          })();
+
+        case 'aitomate:runner:resume':
+          return (async () => {
+            const run = await getRun(message.tabId);
+            if (run.session.status !== 'paused') return;
+            const ctrl = getControl(message.tabId);
+            ctrl.resume?.();
+            ctrl.pausePromise = null;
+            ctrl.resume = null;
+            run.session = reduceRunnerState(run.session, { type: 'RESUME' });
+            await saveRun(message.tabId, run);
+            await broadcastRunnerState(message.tabId, run.session);
+          })();
+
+        case 'aitomate:runner:stop':
+          return (async () => {
+            const run = await getRun(message.tabId);
+            if (
+              run.session.status !== 'playing' &&
+              run.session.status !== 'paused' &&
+              run.session.status !== 'error'
+            ) {
+              return;
+            }
+            const ctrl = getControl(message.tabId);
+            ctrl.stopped = true;
+            ctrl.resume?.(); // unblock if paused
+            run.session = reduceRunnerState(run.session, { type: 'STOP' });
+            await saveRun(message.tabId, run);
+            await broadcastRunnerState(message.tabId, run.session);
+          })();
+
         default:
           return;
       }
     },
   );
 
-  // Top-frame navigation while recording: same-origin becomes a `navigate`
-  // step, cross-origin pauses the session (FR-1) for the developer to confirm.
+  // ── Top-frame navigation while recording (unchanged from T1.x) ──
+
   browser.webNavigation.onCommitted.addListener(async (details) => {
     if (details.frameId !== 0) return;
     const recording = await getRecording(details.tabId);
     if (recording.session.status !== 'recording') return;
 
-    // The reducer rebases originUrl on each same-origin navigation, so this
-    // is the previous URL — a reload (same URL) records no navigate step.
     const previousUrl = recording.session.originUrl;
     recording.session = reduceSession(recording.session, {
       type: 'NAVIGATE',
@@ -127,12 +319,12 @@ export default defineBackground(() => {
     }
     await saveRecording(details.tabId, recording);
     if (recording.session.status === 'paused') {
-      await broadcastState(details.tabId, recording.session);
+      await broadcastRecorderState(details.tabId, recording.session);
     }
   });
 
-  // New tab/window opened from a recording tab: pause and warn (FR-1) — the
-  // Build UI (T2.6) surfaces this via the broadcast state's `pauseReason`.
+  // ── New tab/window opened from a recording tab (unchanged from T1.x) ──
+
   browser.tabs.onCreated.addListener(async (tab) => {
     const openerTabId = tab.openerTabId;
     if (openerTabId === undefined) return;
@@ -140,10 +332,13 @@ export default defineBackground(() => {
     if (recording.session.status !== 'recording') return;
     recording.session = reduceSession(recording.session, { type: 'NEW_TAB_OPENED' });
     await saveRecording(openerTabId, recording);
-    await broadcastState(openerTabId, recording.session);
+    await broadcastRecorderState(openerTabId, recording.session);
   });
+
+  // ── Tab close cleanup (both recorder and runner) ──
 
   browser.tabs.onRemoved.addListener((tabId) => {
     void clearRecording(tabId);
+    void clearRun(tabId);
   });
 });
