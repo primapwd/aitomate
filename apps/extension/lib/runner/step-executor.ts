@@ -5,6 +5,7 @@ import type {
   RunnerContentEvent,
   StepResult,
 } from './messages';
+import { resolveStepValues } from './value-resolver';
 
 /**
  * Step execution with per-step retry/backoff + smart-wait (T2.2).
@@ -83,6 +84,23 @@ async function executeDomStep(
   signal?: { stopped: () => boolean },
 ): Promise<StepResult> {
   const timeoutMs = step.options?.timeoutMs ?? DEFAULT_DOM_WAIT_TIMEOUT_MS;
+
+  // Resolve dynamic/AI/DB values once before the retry loop (T2.3). The
+  // content script receives a static resolver and never needs to know about
+  // resolver modes. On retry the same resolved value is reused. Resolution
+  // failures (e.g. a resolver mode that isn't implemented yet) are a step
+  // failure, not a crash — the run loop expects a StepResult, never a throw.
+  try {
+    step = resolveStepValues(step);
+  } catch (err) {
+    return {
+      stepId: step.id,
+      passed: false,
+      error: err instanceof Error ? err.message : String(err),
+      attempts: 0,
+      durationMs: 0,
+    };
+  }
 
   let lastError: string | undefined;
 

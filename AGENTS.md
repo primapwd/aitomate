@@ -31,8 +31,15 @@ decision changes; bump its version and changelog.
   smart-wait via MutationObserver, per-tab run store in `storage.session`;
   step execution in `entrypoints/content.ts` is frame-gated: with
   `allFrames: true` only the frame matching the step selector's `framePath`
-  may respond, or a wrong-frame "not found" wins the sendMessage race).
-- Next: T2.3 (value resolvers: static + dynamic array), T2.4 (playback
+  may respond, or a wrong-frame "not found" wins the sendMessage race),
+  T2.3 (value resolvers in `lib/runner/value-resolver.ts` — static +
+  dynamic/array (random|sequential); resolved once in the background before
+  the retry loop so the content script only ever sees a static resolver and
+  retries reuse the same value; unimplemented modes (ai/database/param) fail
+  the step with a plain-language error instead of throwing — `runSequence`
+  expects a StepResult, never a rejection; sequential counters are in-memory
+  keyed by `JSON.stringify(values)`, reset on SW restart by design).
+- Next: T2.4 (playback
   hardening: native-setter fill for React/Vue controlled inputs, upload),
   T2.6 (Build view step editor — recorder/runner still have no UI; steps
   retrievable via `aitomate:recorder:get-steps`, runs driven via

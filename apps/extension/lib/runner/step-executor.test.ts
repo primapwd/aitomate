@@ -107,6 +107,37 @@ describe('executeStepWithRetry', () => {
     expect(result.attempts).toBe(2);
   });
 
+  it('fails gracefully when a resolver mode is not implemented', async () => {
+    const sendMessage = vi.spyOn(browser.tabs, 'sendMessage');
+    const step = makeStep({
+      action: 'fill',
+      resolver: { type: 'dynamic', mode: 'ai', prompt: 'an email', provider: 'configured-default' },
+    });
+
+    const result = await executeStepWithRetry(TAB_ID, step);
+    expect(result.passed).toBe(false);
+    expect(result.error).toContain('not supported yet');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('resolves a dynamic array value to a static resolver before sending', async () => {
+    const sendMessage = vi
+      .spyOn(browser.tabs, 'sendMessage')
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(true));
+    const step = makeStep({
+      action: 'fill',
+      resolver: { type: 'dynamic', mode: 'array', values: ['a@b.com'], order: 'random' },
+    });
+
+    const result = await executeStepWithRetry(TAB_ID, step);
+    expect(result.passed).toBe(true);
+    const sent = sendMessage.mock.calls[1][1] as {
+      step: { resolver: { type: string; value: string } };
+    };
+    expect(sent.step.resolver).toEqual({ type: 'static', value: 'a@b.com' });
+  });
+
   it('handles navigate steps via tabs.update without retry', async () => {
     const navigateStep = makeStep({
       action: 'navigate',
