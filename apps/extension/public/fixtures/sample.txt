@@ -1,0 +1,1 @@
+Sample fixture for file-upload test playback.

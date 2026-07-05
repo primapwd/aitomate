@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   escapeAttrValue,
+  isTruthyValue,
   matchGlob,
   queryElement,
   queryElements,
   sameFramePath,
+  setNativeChecked,
+  setNativeValue,
 } from './dom';
 
 beforeEach(() => {
@@ -89,6 +92,78 @@ describe('matchGlob', () => {
   it('treats regex metacharacters as literals', () => {
     expect(matchGlob('https://app.test/a.b', 'https://app.test/a.b')).toBe(true);
     expect(matchGlob('https://app.test/aXb', 'https://app.test/a.b')).toBe(false);
+  });
+});
+
+describe('setNativeValue', () => {
+  it('sets the value and dispatches input + change events', () => {
+    document.body.innerHTML = '<input id="t" />';
+    const input = document.getElementById('t') as HTMLInputElement;
+
+    const inputSpy = vi.fn();
+    const changeSpy = vi.fn();
+    input.addEventListener('input', inputSpy);
+    input.addEventListener('change', changeSpy);
+
+    setNativeValue(input, 'new-val');
+
+    expect(input.value).toBe('new-val');
+    expect(inputSpy).toHaveBeenCalledTimes(1);
+    expect(changeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('works on textarea and select too', () => {
+    document.body.innerHTML =
+      '<textarea id="ta"></textarea><select id="sel"><option>a</option><option>b</option></select>';
+    const ta = document.getElementById('ta') as HTMLTextAreaElement;
+    const sel = document.getElementById('sel') as HTMLSelectElement;
+
+    setNativeValue(ta, 'notes');
+    expect(ta.value).toBe('notes');
+
+    setNativeValue(sel, 'b');
+    expect(sel.value).toBe('b');
+  });
+});
+
+describe('isTruthyValue', () => {
+  it('maps resolved values to a checked state', () => {
+    expect(isTruthyValue(true)).toBe(true);
+    expect(isTruthyValue(false)).toBe(false);
+    expect(isTruthyValue('true')).toBe(true);
+    expect(isTruthyValue('false')).toBe(false);
+    expect(isTruthyValue('on')).toBe(true);
+    expect(isTruthyValue('off')).toBe(false);
+    expect(isTruthyValue('0')).toBe(false);
+    expect(isTruthyValue(1)).toBe(true);
+    expect(isTruthyValue(0)).toBe(false);
+    expect(isTruthyValue('')).toBe(false);
+  });
+});
+
+describe('setNativeChecked', () => {
+  it('toggles a checkbox via click and fires change', () => {
+    document.body.innerHTML = '<input id="cb" type="checkbox" />';
+    const cb = document.getElementById('cb') as HTMLInputElement;
+    const changeSpy = vi.fn();
+    cb.addEventListener('change', changeSpy);
+
+    setNativeChecked(cb, true);
+    expect(cb.checked).toBe(true);
+    expect(changeSpy).toHaveBeenCalledTimes(1);
+
+    setNativeChecked(cb, true); // already checked — no extra click
+    expect(changeSpy).toHaveBeenCalledTimes(1);
+
+    setNativeChecked(cb, false);
+    expect(cb.checked).toBe(false);
+  });
+
+  it('never clicks a radio to uncheck it', () => {
+    document.body.innerHTML = '<input id="r" type="radio" checked />';
+    const r = document.getElementById('r') as HTMLInputElement;
+    setNativeChecked(r, false);
+    expect(r.checked).toBe(true); // unchanged — radios cannot be unchecked
   });
 });
 

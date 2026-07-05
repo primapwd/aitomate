@@ -113,6 +113,55 @@ export function waitForElement(
 }
 
 /**
+ * Set value on a form control using the native prototype setter, bypassing
+ * framework property interception (React controlled inputs, Vue v-model).
+ *
+ * React replaces the instance `value` property with a setter that calls
+ * `setProperty` — direct `el.value = "x"` goes to React's setter instead of
+ * the browser's native setter, so React never sees the change. By calling
+ * the native setter from the prototype, we write the value to the underlying
+ * DOM slot, then the dispatched `input` event tells React to sync its state.
+ *
+ * Vue's `v-model` listens for `input` events and reads `el.value` — the
+ * native setter + event dispatch covers that too.
+ */
+export function setNativeValue(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  value: string,
+): void {
+  const ctor = el.constructor as
+    | typeof HTMLInputElement
+    | typeof HTMLTextAreaElement
+    | typeof HTMLSelectElement;
+  const descriptor = Object.getOwnPropertyDescriptor(ctor.prototype, 'value');
+  if (descriptor?.set) {
+    descriptor.set.call(el, value);
+  } else {
+    el.value = value;
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/** Interpret a resolved fill value as a checked state for checkbox/radio. */
+export function isTruthyValue(value: string | number | boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  return !['', 'false', '0', 'off', 'no'].includes(value.toLowerCase());
+}
+
+/**
+ * Set checkbox/radio state the way a user would: via click(), which fires
+ * the click/input/change sequence frameworks listen for. Setting `value`
+ * never toggles these controls — their state lives in `checked`. A radio
+ * cannot be unchecked by clicking, so `checked=false` on a radio is a no-op.
+ */
+export function setNativeChecked(el: HTMLInputElement, checked: boolean): void {
+  if (el.type === 'radio' && !checked) return;
+  if (el.checked !== checked) el.click();
+}
+
+/**
  * Glob matching for URL patterns (FR-7 urlMatches):
  * - `**` matches anything, including `/`
  * - `*` matches anything except `/`

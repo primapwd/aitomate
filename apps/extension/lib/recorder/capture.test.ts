@@ -5,6 +5,8 @@ import {
   buildFillStep,
   buildKeypressStep,
   buildNavigateStep,
+  buildUploadStep,
+  isFileInput,
   isValueControl,
   valueOfControl,
 } from './capture';
@@ -40,6 +42,16 @@ describe('step builders', () => {
   it('builds a navigate step', () => {
     expect(buildNavigateStep('/checkout')).toEqual({ action: 'navigate', url: '/checkout' });
   });
+
+  it('builds an upload step with fixture ref', () => {
+    expect(
+      buildUploadStep({ strategy: 'testid', value: 'avatar' }, 'images/sample.png'),
+    ).toEqual({
+      action: 'upload',
+      selector: { strategy: 'testid', value: 'avatar' },
+      fixtureRef: 'images/sample.png',
+    });
+  });
 });
 
 describe('isValueControl', () => {
@@ -61,6 +73,25 @@ describe('isValueControl', () => {
     `;
     for (const el of document.querySelectorAll('input')) {
       expect(isValueControl(el)).toBe(false);
+    }
+  });
+
+  it('is false for file inputs (they become upload steps, not fill)', () => {
+    document.body.innerHTML = `<input type="file" />`;
+    expect(isValueControl(document.querySelector('input')!)).toBe(false);
+  });
+});
+
+describe('isFileInput', () => {
+  it('is true for input[type=file]', () => {
+    document.body.innerHTML = `<input type="file" />`;
+    expect(isFileInput(document.querySelector('input')!)).toBe(true);
+  });
+
+  it('is false for other elements', () => {
+    document.body.innerHTML = `<input type="text" /><textarea></textarea><select></select>`;
+    for (const el of document.querySelectorAll('input, textarea, select')) {
+      expect(isFileInput(el)).toBe(false);
     }
   });
 });

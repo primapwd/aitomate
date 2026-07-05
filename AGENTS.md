@@ -38,10 +38,18 @@ decision changes; bump its version and changelog.
   retries reuse the same value; unimplemented modes (ai/database/param) fail
   the step with a plain-language error instead of throwing — `runSequence`
   expects a StepResult, never a rejection; sequential counters are in-memory
-  keyed by `JSON.stringify(values)`, reset on SW restart by design).
-- Next: T2.4 (playback
-  hardening: native-setter fill for React/Vue controlled inputs, upload),
-  T2.6 (Build view step editor — recorder/runner still have no UI; steps
+  keyed by `JSON.stringify(values)`, reset on SW restart by design),
+  T2.4 (playback hardening — `setNativeValue` in `lib/runner/dom.ts` uses
+  the native prototype setter + input/change dispatch so React/Vue
+  controlled inputs register fills; checkbox/radio go through
+  `setNativeChecked` (click-based — their state is `checked`, not `value`);
+  upload replay builds a `DataTransfer` from fixtures bundled in
+  `public/fixtures/`, which must stay listed in `web_accessible_resources`
+  (wxt.config.ts, MV2 + MV3 shapes) or the content-script fetch is blocked;
+  recorder now emits `upload` steps for file inputs with the file name as a
+  placeholder fixtureRef).
+- Next: T2.5 (built-in assertion set as executable steps — partly covered
+  by executeAssert), T2.6 (Build view step editor — recorder/runner still have no UI; steps
   retrievable via `aitomate:recorder:get-steps`, runs driven via
   `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.

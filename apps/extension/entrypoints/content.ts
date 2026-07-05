@@ -6,6 +6,8 @@ import {
   buildClickStep,
   buildFillStep,
   buildKeypressStep,
+  buildUploadStep,
+  isFileInput,
   isValueControl,
   valueOfControl,
 } from '@/lib/recorder/capture';
@@ -13,12 +15,15 @@ import type { RecorderEvent, RecorderStateMessage } from '@/lib/recorder/message
 import { initialSessionState, type RecorderSessionState } from '@/lib/recorder/session';
 import type { RunnerContentCommand, RunnerContentEvent } from '@/lib/runner/messages';
 import {
+  isTruthyValue,
   isVisible,
   matchGlob,
   queryElement,
   queryElements,
   sameFramePath,
   selectorDescription,
+  setNativeChecked,
+  setNativeValue,
   waitForElement,
 } from '@/lib/runner/dom';
 
@@ -72,10 +77,23 @@ export default defineContentScript({
       (event) => {
         if (recorderState.status !== 'recording') return;
         const target = event.composedPath()[0];
-        if (!(target instanceof Element) || !isValueControl(target)) return;
+        if (!(target instanceof Element)) return;
         if (isExcludedField(target)) return;
 
         const selector = generateSelector(target);
+
+        // File inputs become upload steps (T2.4); all other value controls
+        // become fill steps.
+        if (isFileInput(target)) {
+          // The file name is used as a placeholder fixtureRef — the user
+          // replaces it via the Build UI before playback.
+          const files = (target as HTMLInputElement).files;
+          const fixtureRef = files?.length ? files[0].name : 'upload';
+          sendStep(withFramePath(buildUploadStep(selector, fixtureRef)));
+          return;
+        }
+
+        if (!isValueControl(target)) return;
         const value = valueOfControl(target);
         sendStep(withFramePath(buildFillStep(selector, value)));
       },
@@ -159,12 +177,7 @@ async function executeStep(step: Step): Promise<RunnerContentEvent> {
       case 'assert':
         return executeAssert(step);
       case 'upload':
-        return {
-          type: 'aitomate:runner:step-executed',
-          stepId: step.id,
-          passed: false,
-          error: 'File upload not yet implemented (T2.4)',
-        };
+        return executeUpload(step);
       default:
         return {
           type: 'aitomate:runner:step-executed',
@@ -226,12 +239,61 @@ async function executeFill(step: Step & { action: 'fill' }): Promise<RunnerConte
   }
   scrollIntoView(el);
   el.focus();
+  // Checkbox/radio state lives in `checked`, not `value` — the recorder
+  // captures it as a boolean, and setting value never toggles the control.
+  if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+    setNativeChecked(el, isTruthyValue(step.resolver.value));
+    el.blur();
+    return { type: 'aitomate:runner:step-executed', stepId: step.id, passed: true };
+  }
   const value = String(step.resolver.value);
-  el.value = value;
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+  // Use native prototype setter so React/Vue controlled inputs register the
+  // change (T2.4). The setter dispatches input + change events.
+  setNativeValue(el, value);
   el.blur();
   return { type: 'aitomate:runner:step-executed', stepId: step.id, passed: true };
+}
+
+async function executeUpload(step: Step & { action: 'upload' }): Promise<RunnerContentEvent> {
+  const el = queryElement(step.selector);
+  if (!el || !(el instanceof HTMLInputElement) || el.type !== 'file') {
+    return result(step.id, false, 'Target is not a file input');
+  }
+
+  // Load the fixture from the extension's bundled fixtures/ directory.
+  // fixtureRef is dynamic, so it can't satisfy WXT's generated PublicPath
+  // union — hence the argument cast. fixtures/* must stay listed in
+  // web_accessible_resources or this fetch is blocked on real pages.
+  const fixtureUrl = browser.runtime.getURL(
+    `/fixtures/${step.fixtureRef}` as Parameters<typeof browser.runtime.getURL>[0],
+  );
+  const fileName = step.fixtureRef.split('/').pop() ?? 'file';
+
+  let blob: Blob;
+  try {
+    const response = await fetch(fixtureUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    blob = await response.blob();
+  } catch (err) {
+    return result(step.id, false, `Cannot load fixture "${step.fixtureRef}": ${err}`);
+  }
+
+  const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+
+  // Set the FileList via the native prototype setter — React intercepts the
+  // instance 'files' property the same way it does for 'value'.
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files');
+  if (descriptor?.set) {
+    descriptor.set.call(el, dt.files);
+  } else {
+    el.files = dt.files;
+  }
+  // Real file selection fires input then change; dispatch both for parity.
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return result(step.id, true);
 }
 
 async function executeKeypress(step: Step & { action: 'keypress' }): Promise<RunnerContentEvent> {
