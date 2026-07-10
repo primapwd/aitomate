@@ -51,9 +51,20 @@ decision changes; bump its version and changelog.
   `executeAssert` — each polls via `waitForAssertion` in `lib/runner/dom.ts`
   until true or timeout (default 10s, `step.options.timeoutMs` overrides —
   note the same knob also bounds the pre-step DOM-stability wait); failures
-  produce plain-language expected-vs-actual messages).
-- Next: T2.6 (Build view step editor — recorder/runner still have no UI; steps
-  retrievable via `aitomate:recorder:get-steps`, runs driven via
+  produce plain-language expected-vs-actual messages), T2.6 (Build view step
+  editor in `components/views/build/` — record/stop/resume controls, step
+  list with reorder/delete, Advanced-only edits for static fill values, URLs
+  and timeouts; Simple mode never shows raw selector syntax (Constitution).
+  Background broadcasts `aitomate:recorder:state-change` (with tabId — an
+  open panel must ignore other tabs) to popup/side panel on every state
+  change AND every captured step, so an open side panel updates live;
+  step edits go back via `aitomate:recorder:set-steps`/`update-step`.
+  Popup/sidepanel mount in StrictMode — never latch a `mounted` ref false
+  in effect cleanup without re-setting it true in the effect body).
+- Next: finish T2.6 Advanced mode (selector/resolver-type/assertion/session-
+  marker editors are still missing — spec keeps the box unchecked until then),
+  T2.7 (import/export scenario as `.aitomate.json`), T2.8 (scenario chaining),
+  T4.2 (Run view UI; runs driven via
   `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.
 

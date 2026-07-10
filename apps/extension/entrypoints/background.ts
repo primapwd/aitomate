@@ -2,6 +2,7 @@ import type { Scenario, Step } from '@aitomate/schema';
 import type {
   RecorderCommand,
   RecorderEvent,
+  RecorderPopupMessage,
   RecorderStateMessage,
   RecorderStepsResponse,
 } from '@/lib/recorder/messages';
@@ -39,11 +40,26 @@ async function broadcastRecorderState(
   tabId: number,
   state: RecorderSessionState,
 ): Promise<void> {
-  const message: RecorderStateMessage = { type: 'aitomate:recorder:state', state };
+  const contentMsg: RecorderStateMessage = { type: 'aitomate:recorder:state', state };
   try {
-    await browser.tabs.sendMessage(tabId, message);
+    await browser.tabs.sendMessage(tabId, contentMsg);
   } catch {
     // No content script listening in this tab (e.g. a chrome:// page) — fine.
+  }
+  await notifyPopup(tabId, state);
+}
+
+/** Notify an open popup/side panel (T2.6); it refreshes its step list too. */
+async function notifyPopup(tabId: number, state: RecorderSessionState): Promise<void> {
+  const popupMsg: RecorderPopupMessage = {
+    type: 'aitomate:recorder:state-change',
+    tabId,
+    state,
+  };
+  try {
+    await browser.runtime.sendMessage(popupMsg);
+  } catch {
+    // No popup listening — fine.
   }
 }
 
@@ -174,7 +190,7 @@ export default defineBackground(() => {
         | RunnerCommand,
       sender,
     ):
-      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | void>
+      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | RecorderPopupMessage | void>
       | void => {
       // ── Recorder handlers (T1.x) ──
       switch (message.type) {
@@ -185,11 +201,14 @@ export default defineBackground(() => {
             if (recording.session.status !== 'recording') return;
             recording.steps.push({ ...message.step, id: nextStepId(recording) } as Step);
             await saveRecording(tabId, recording);
+            // Let an open side panel show the new step live.
+            await notifyPopup(tabId, recording.session);
           });
         }
 
         case 'aitomate:recorder:get-state': {
-          const tabId = sender.tab?.id;
+          // Different callers: content script (sender.tab.id) or popup (message.tabId)
+          const tabId = sender.tab?.id ?? (message as RecorderCommand).tabId;
           if (tabId === undefined) return;
           return getRecording(tabId).then((recording) => recording.session);
         }
@@ -231,6 +250,22 @@ export default defineBackground(() => {
           return getRecording(message.tabId).then((recording) => ({
             steps: recording.steps,
           }));
+
+        case 'aitomate:recorder:set-steps':
+          return (async () => {
+            const recording = await getRecording(message.tabId);
+            recording.steps = message.steps;
+            await saveRecording(message.tabId, recording);
+          })();
+
+        case 'aitomate:recorder:update-step':
+          return (async () => {
+            const recording = await getRecording(message.tabId);
+            const idx = recording.steps.findIndex((s) => s.id === message.stepId);
+            if (idx === -1) return;
+            recording.steps[idx] = { ...recording.steps[idx], ...message.patch } as Step;
+            await saveRecording(message.tabId, recording);
+          })();
 
         // ── Runner handlers (T2.2) ──
 
