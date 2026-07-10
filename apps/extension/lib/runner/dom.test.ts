@@ -9,6 +9,7 @@ import {
   sameFramePath,
   setNativeChecked,
   setNativeValue,
+  waitForAssertion,
 } from './dom';
 
 beforeEach(() => {
@@ -164,6 +165,34 @@ describe('setNativeChecked', () => {
     const r = document.getElementById('r') as HTMLInputElement;
     setNativeChecked(r, false);
     expect(r.checked).toBe(true); // unchanged — radios cannot be unchecked
+  });
+});
+
+describe('waitForAssertion', () => {
+  it('resolves true immediately when the predicate passes', async () => {
+    await expect(waitForAssertion(() => true, 1000)).resolves.toBe(true);
+  });
+
+  it('polls until the predicate flips to true', async () => {
+    let pass = false;
+    setTimeout(() => {
+      pass = true;
+    }, 120);
+    await expect(waitForAssertion(() => pass, 2000)).resolves.toBe(true);
+  });
+
+  it('evaluates the predicate one final time at the deadline', async () => {
+    let calls = 0;
+    const ok = await waitForAssertion(() => {
+      calls += 1;
+      return false;
+    }, 0);
+    expect(ok).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it('supports async predicates', async () => {
+    await expect(waitForAssertion(async () => true, 1000)).resolves.toBe(true);
   });
 });
 

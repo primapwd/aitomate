@@ -113,6 +113,32 @@ export function waitForElement(
 }
 
 /**
+ * Poll a predicate until it returns true or the timeout fires. Used by
+ * assertions (T2.5) to wait for conditions like element visibility, text
+ * content, or URL changes — matching real test-assertion semantics rather
+ * than failing on the first check.
+ *
+ * The check interval is 200ms. The predicate is always evaluated one last
+ * time at timeout (in case the deadline ticked just after a missed window).
+ */
+export async function waitForAssertion(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ok = await predicate();
+    if (ok) return true;
+    await sleep(200);
+  }
+  return predicate();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
  * Set value on a form control using the native prototype setter, bypassing
  * framework property interception (React controlled inputs, Vue v-model).
  *

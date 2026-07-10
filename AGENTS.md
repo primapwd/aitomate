@@ -47,9 +47,12 @@ decision changes; bump its version and changelog.
   `public/fixtures/`, which must stay listed in `web_accessible_resources`
   (wxt.config.ts, MV2 + MV3 shapes) or the content-script fetch is blocked;
   recorder now emits `upload` steps for file inputs with the file name as a
-  placeholder fixtureRef).
-- Next: T2.5 (built-in assertion set as executable steps — partly covered
-  by executeAssert), T2.6 (Build view step editor — recorder/runner still have no UI; steps
+  placeholder fixtureRef), T2.5 (all 9 FR-7 assertions executable in
+  `executeAssert` — each polls via `waitForAssertion` in `lib/runner/dom.ts`
+  until true or timeout (default 10s, `step.options.timeoutMs` overrides —
+  note the same knob also bounds the pre-step DOM-stability wait); failures
+  produce plain-language expected-vs-actual messages).
+- Next: T2.6 (Build view step editor — recorder/runner still have no UI; steps
   retrievable via `aitomate:recorder:get-steps`, runs driven via
   `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.

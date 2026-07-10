@@ -24,6 +24,7 @@ import {
   selectorDescription,
   setNativeChecked,
   setNativeValue,
+  waitForAssertion,
   waitForElement,
 } from '@/lib/runner/dom';
 
@@ -362,73 +363,177 @@ async function executeWait(step: Step & { action: 'wait' }): Promise<RunnerConte
 async function executeAssert(step: Step & { action: 'assert' }): Promise<RunnerContentEvent> {
   const a = step.assertion;
   const stepId = step.id;
+  // Assertions poll until the condition is met or the timeout fires, like
+  // real test assertions. Default 10s; override via step.options.timeoutMs.
+  const timeout = step.options?.timeoutMs ?? 10_000;
+
   switch (a) {
     case 'elementVisible': {
-      const el = queryElement(step.selector);
-      return result(step.id, el !== null && isVisible(el));
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        return el !== null && isVisible(el);
+      }, timeout);
+      if (ok) return result(stepId, true);
+      return result(
+        stepId,
+        false,
+        `Expected element to be visible but it was not found or is hidden: ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'elementNotVisible': {
-      const el = queryElement(step.selector);
-      return result(step.id, el === null || !isVisible(el));
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        return el === null || !isVisible(el);
+      }, timeout);
+      if (ok) return result(stepId, true);
+      return result(
+        stepId,
+        false,
+        `Expected element to be absent or hidden but it is visible: ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'textContains': {
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        if (!el) return false;
+        const text = el.textContent?.trim() ?? '';
+        return step.caseInsensitive
+          ? text.toLowerCase().includes(step.value.toLowerCase())
+          : text.includes(step.value);
+      }, timeout);
+      if (ok) return result(stepId, true);
       const el = queryElement(step.selector);
-      if (!el) return result(step.id, false, 'Element not found');
-      const text = el.textContent?.trim() ?? '';
-      const value = step.value;
-      const matches = step.caseInsensitive
-        ? text.toLowerCase().includes(value.toLowerCase())
-        : text.includes(value);
-      return result(step.id, matches);
+      const actual = el?.textContent?.trim() ?? '(element not found)';
+      return result(
+        stepId,
+        false,
+        `Expected element text to contain "${step.value}" but found "${actual}": ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'textEquals': {
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        if (!el) return false;
+        return (el.textContent?.trim() ?? '') === step.value;
+      }, timeout);
+      if (ok) return result(stepId, true);
       const el = queryElement(step.selector);
-      if (!el) return result(step.id, false, 'Element not found');
-      return result(step.id, (el.textContent?.trim() ?? '') === step.value);
+      const actual = el?.textContent?.trim() ?? '(element not found)';
+      return result(
+        stepId,
+        false,
+        `Expected element text to equal "${step.value}" but found "${actual}": ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'inputValue': {
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        if (!el) return false;
+        return ((el as HTMLInputElement).value ?? '') === step.value;
+      }, timeout);
+      if (ok) return result(stepId, true);
       const el = queryElement(step.selector);
-      if (!el) return result(step.id, false, 'Element not found');
-      const val = (el as HTMLInputElement).value ?? '';
-      return result(step.id, val === step.value);
+      const actual = el ? (el as HTMLInputElement).value ?? '' : '(element not found)';
+      return result(
+        stepId,
+        false,
+        `Expected input value to be "${step.value}" but found "${actual}": ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'urlMatches': {
-      const current = window.location.href;
       if (step.patternType === 'regex') {
         try {
-          return result(step.id, new RegExp(step.pattern).test(current));
+          const ok = await waitForAssertion(
+            () => new RegExp(step.pattern).test(window.location.href),
+            timeout,
+          );
+          if (ok) return result(stepId, true);
+          return result(
+            stepId,
+            false,
+            `Expected URL to match regex "${step.pattern}" but current URL is "${window.location.href}"`,
+          );
         } catch {
-          return result(step.id, false, `Invalid regex: ${step.pattern}`);
+          return result(
+            stepId,
+            false,
+            `URL pattern is not a valid regular expression: "${step.pattern}"`,
+          );
         }
       }
-      // Glob pattern — simple implementation supporting ** and *
-      return result(step.id, matchGlob(current, step.pattern));
+      const ok = await waitForAssertion(
+        () => matchGlob(window.location.href, step.pattern),
+        timeout,
+      );
+      if (ok) return result(stepId, true);
+      return result(
+        stepId,
+        false,
+        `Expected URL to match pattern "${step.pattern}" but current URL is "${window.location.href}"`,
+      );
     }
+
     case 'elementCount': {
-      const count = queryElements(step.selector).length;
-      switch (step.comparator) {
-        case 'eq':
-          return result(step.id, count === step.count);
-        case 'gte':
-          return result(step.id, count >= step.count);
-        case 'lte':
-          return result(step.id, count <= step.count);
-        default:
-          return result(step.id, false, `Unknown comparator: ${String(step.comparator)}`);
-      }
+      const ok = await waitForAssertion(() => {
+        const count = queryElements(step.selector).length;
+        switch (step.comparator) {
+          case 'eq':
+            return count === step.count;
+          case 'gte':
+            return count >= step.count;
+          case 'lte':
+            return count <= step.count;
+          default:
+            return false;
+        }
+      }, timeout);
+      if (ok) return result(stepId, true);
+      const actualCount = queryElements(step.selector).length;
+      const cmp = step.comparator === 'eq' ? '=' : step.comparator === 'gte' ? '≥' : '≤';
+      return result(
+        stepId,
+        false,
+        `Expected element count ${cmp} ${step.count} but found ${actualCount}: ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'elementEnabled': {
-      const el = queryElement(step.selector);
-      if (!el) return result(step.id, false, 'Element not found');
-      return result(step.id, !(el as HTMLInputElement).disabled);
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        return el !== null && !(el as HTMLInputElement).disabled;
+      }, timeout);
+      if (ok) return result(stepId, true);
+      return result(
+        stepId,
+        false,
+        `Expected element to be enabled but it is disabled: ${selectorDescription(step.selector)}`,
+      );
     }
+
     case 'elementDisabled': {
-      const el = queryElement(step.selector);
-      if (!el) return result(step.id, false, 'Element not found');
-      return result(step.id, (el as HTMLInputElement).disabled === true);
+      const ok = await waitForAssertion(() => {
+        const el = queryElement(step.selector);
+        return el !== null && (el as HTMLInputElement).disabled === true;
+      }, timeout);
+      if (ok) return result(stepId, true);
+      return result(
+        stepId,
+        false,
+        `Expected element to be disabled but it is enabled: ${selectorDescription(step.selector)}`,
+      );
     }
+
     default:
-      return result(stepId, false, `Unknown assertion: ${a}`);
+      return result(
+        stepId,
+        false,
+        `Unknown assertion "${a}". Valid assertions: elementVisible, elementNotVisible, textContains, textEquals, inputValue, urlMatches, elementCount, elementEnabled, elementDisabled`,
+      );
   }
 }
 
