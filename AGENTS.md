@@ -60,11 +60,15 @@ decision changes; bump its version and changelog.
   change AND every captured step, so an open side panel updates live;
   step edits go back via `aitomate:recorder:set-steps`/`update-step`.
   Popup/sidepanel mount in StrictMode — never latch a `mounted` ref false
-  in effect cleanup without re-setting it true in the effect body).
-- Next: finish T2.6 Advanced mode (selector/resolver-type/assertion/session-
-  marker editors are still missing — spec keeps the box unchecked until then),
-  T2.7 (import/export scenario as `.aitomate.json`), T2.8 (scenario chaining),
-  T4.2 (Run view UI; runs driven via
+  in effect cleanup without re-setting it true in the effect body.
+  Advanced mode edits selector (strategy+value), resolver (static/array/
+  ai/database presets), assertion params, URL/wait/fixture, timeout/retry;
+  the dynamic-array value list uses a local-draft JSON input (a controlled
+  input bound to JSON.stringify is uneditable — intermediate keystrokes are
+  invalid JSON). Assertion *kind* is not switchable and per-step session
+  marker has no schema field yet — both deferred, marker to T2.8).
+- Next: T2.7 (import/export scenario as `.aitomate.json`), T2.8 (scenario
+  chaining + `meta.sessionMarker`), T4.2 (Run view UI; runs driven via
   `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.
 

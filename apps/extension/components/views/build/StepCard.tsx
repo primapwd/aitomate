@@ -1,4 +1,5 @@
-import type { Step } from '@aitomate/schema';
+import { useState } from 'react';
+import type { Resolver, Selector, Step } from '@aitomate/schema';
 
 interface Props {
   step: Step;
@@ -10,44 +11,17 @@ interface Props {
   onMoveDown: (() => void) | null;
 }
 
-export default function StepCard({
-  step,
-  index,
-  advanced,
-  onDelete,
-  onUpdate,
-  onMoveUp,
-  onMoveDown,
-}: Props) {
+export default function StepCard(props: Props) {
+  const { step, index, advanced, onDelete, onUpdate, onMoveUp, onMoveDown } = props;
   const description = describeStep(step, advanced ?? false);
 
   return (
-    <div
-      style={{
-        padding: '8px 10px',
-        marginBottom: 6,
-        border: '1px solid #e0e0e0',
-        borderRadius: 8,
-        background: '#fafafa',
-      }}
-    >
+    <div style={card}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <span
-          style={{
-            fontSize: 11,
-            color: '#999',
-            minWidth: 18,
-            marginTop: 2,
-            textAlign: 'center',
-          }}
-        >
-          {index + 1}
-        </span>
+        <span style={num}>{index + 1}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <StepIcon action={step.action} />
-          <span style={{ fontSize: 12, color: '#333', marginLeft: 4 }}>
-            {description}
-          </span>
+          <span style={{ fontSize: 12, color: '#333', marginLeft: 4 }}>{description}</span>
           {advanced && (
             <div style={{ marginTop: 4, fontSize: 11, color: '#888' }}>
               <code style={{ fontSize: 10 }}>{step.id}</code>
@@ -55,80 +29,479 @@ export default function StepCard({
           )}
         </div>
         <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-          {onMoveUp && (
-            <MiniBtn onClick={onMoveUp} label="Move up" symbol="↑" />
-          )}
-          {onMoveDown && (
-            <MiniBtn onClick={onMoveDown} label="Move down" symbol="↓" />
-          )}
+          {onMoveUp && <MiniBtn onClick={onMoveUp} label="Move up" symbol="↑" />}
+          {onMoveDown && <MiniBtn onClick={onMoveDown} label="Move down" symbol="↓" />}
           <MiniBtn onClick={onDelete} label="Delete step" symbol="✕" danger />
         </div>
       </div>
 
-      {/* Editing static values is Simple-mode scope per spec T2.6. */}
-      {step.action === 'fill' && step.resolver.type === 'static' && (
-        <div style={{ marginTop: 6, paddingLeft: 26 }}>
-          <input
+      {/* === Inline editors === */}
+
+      {/* Static fill value — Simple-mode scope per spec T2.6. In Advanced
+          mode the ResolverEditor below already covers it. */}
+      {!advanced && step.action === 'fill' && step.resolver.type === 'static' && (
+        <FieldGroup>
+          <InlineInput
+            label="Value"
             value={String(step.resolver.value)}
-            onChange={(e) =>
-              onUpdate({ resolver: { type: 'static', value: e.target.value } })
-            }
-            style={inputStyle}
+            onChange={(v) => onUpdate({ resolver: { type: 'static', value: v } })}
             placeholder="Static value"
           />
-        </div>
+        </FieldGroup>
       )}
 
-      {advanced && step.action === 'navigate' && (
-        <div style={{ marginTop: 6, paddingLeft: 26 }}>
-          <input
-            value={step.url}
-            onChange={(e) => onUpdate({ url: e.target.value })}
-            style={inputStyle}
-            placeholder="URL or path"
-          />
-        </div>
-      )}
-
-      {advanced && step.action === 'wait' && (
-        <div style={{ marginTop: 6, paddingLeft: 26 }}>
-          {step.durationMs !== undefined && (
-            <label style={{ fontSize: 11, color: '#666' }}>
-              Duration: {step.durationMs}ms
-            </label>
-          )}
-          {step.forSelector && (
-            <div style={{ fontSize: 11, color: '#666' }}>
-              Wait for element: {selectorLabel(step.forSelector, true)}
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* Advanced-mode panels */}
       {advanced && (
-        <div style={{ marginTop: 4, paddingLeft: 26 }}>
-          <label style={{ fontSize: 10, color: '#aaa' }}>
-            Timeout:
-            <input
-              type="number"
-              value={step.options?.timeoutMs ?? ''}
-              onChange={(e) =>
-                onUpdate({
-                  options: {
-                    ...(step.options ?? {}),
-                    timeoutMs: e.target.value ? Number(e.target.value) : undefined,
-                  },
-                })
-              }
-              style={{ ...inputStyle, width: 70, marginLeft: 4 }}
-              placeholder="30000"
-            />
-          </label>
-        </div>
+        <>
+          {/* Selector editor (any step with a selector) */}
+          {'selector' in step && (
+            <FieldGroup label="Selector">
+              <SelectorEditor
+                selector={step.selector as Selector}
+                onChange={(sel) => onUpdate({ selector: sel } as Partial<Step>)}
+              />
+            </FieldGroup>
+          )}
+
+          {/* Resolver config (fill steps only) */}
+          {step.action === 'fill' && (
+            <FieldGroup label="Resolver">
+              <ResolverEditor
+                resolver={step.resolver}
+                onChange={(res) => onUpdate({ resolver: res } as Partial<Step>)}
+              />
+            </FieldGroup>
+          )}
+
+          {/* Assertion editor (assert steps only) */}
+          {step.action === 'assert' && (
+            <FieldGroup label="Assertion">
+              <AssertionEditor
+                step={step}
+                onChange={(patch) => onUpdate(patch)}
+              />
+            </FieldGroup>
+          )}
+
+          {/* URL editor */}
+          {step.action === 'navigate' && (
+            <FieldGroup label="URL">
+              <InlineInput
+                value={step.url}
+                onChange={(v) => onUpdate({ url: v } as Partial<Step>)}
+                placeholder="/path"
+              />
+            </FieldGroup>
+          )}
+
+          {/* Wait step details */}
+          {step.action === 'wait' && (
+            <FieldGroup>
+              {step.durationMs !== undefined && (
+                <InlineInput
+                  label="Duration (ms)"
+                  value={String(step.durationMs)}
+                  onChange={(v) => onUpdate({ durationMs: Number(v) || undefined } as Partial<Step>)}
+                />
+              )}
+              {step.forSelector && (
+                <SelectorEditor
+                  label="Wait for element"
+                  selector={step.forSelector}
+                  onChange={(sel) => onUpdate({ forSelector: sel } as Partial<Step>)}
+                />
+              )}
+            </FieldGroup>
+          )}
+
+          {/* Fixture ref (upload steps) */}
+          {step.action === 'upload' && (
+            <FieldGroup label="Fixture">
+              <InlineInput
+                value={step.fixtureRef}
+                onChange={(v) => onUpdate({ fixtureRef: v } as Partial<Step>)}
+                placeholder="e.g. sample.pdf"
+              />
+            </FieldGroup>
+          )}
+
+          {/* Timeout + retry */}
+          <FieldGroup label="Options">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <InlineInput
+                label="Timeout (ms)"
+                value={step.options?.timeoutMs !== undefined ? String(step.options.timeoutMs) : ''}
+                onChange={(v) =>
+                  onUpdate({
+                    options: { ...(step.options ?? {}), timeoutMs: v ? Number(v) : undefined },
+                  } as Partial<Step>)
+                }
+                placeholder="30000"
+                compact
+              />
+              <InlineInput
+                label="Retries"
+                value={step.options?.retry?.count !== undefined ? String(step.options.retry.count) : ''}
+                onChange={(v) =>
+                  onUpdate({
+                    options: {
+                      ...(step.options ?? {}),
+                      retry: v
+                        ? { ...(step.options?.retry ?? {}), count: Number(v) }
+                        : undefined,
+                    },
+                  } as Partial<Step>)
+                }
+                placeholder="3"
+                compact
+              />
+            </div>
+          </FieldGroup>
+        </>
       )}
     </div>
   );
 }
+
+// ── Selector editor ──
+
+const STRATEGIES = ['testid', 'id', 'aria', 'css', 'text'] as const;
+
+function SelectorEditor({
+  selector,
+  onChange,
+  label,
+}: {
+  selector: Selector;
+  onChange: (sel: Selector) => void;
+  label?: string;
+}) {
+  return (
+    <div>
+      {label && <FieldLabel>{label}</FieldLabel>}
+      <div style={{ display: 'flex', gap: 4 }}>
+        <select
+          value={selector.strategy}
+          onChange={(e) => onChange({ ...selector, strategy: e.target.value as Selector['strategy'] })}
+          style={selectStyle}
+        >
+          {STRATEGIES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <input
+          value={selector.value}
+          onChange={(e) => onChange({ ...selector, value: e.target.value })}
+          style={fieldStyle}
+          placeholder="value"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Resolver editor ──
+
+const RESOLVER_TYPES = [
+  { type: 'static', label: 'Static' },
+  { type: 'dynamic', mode: 'array', label: 'Dynamic — Array' },
+  { type: 'dynamic', mode: 'ai', label: 'Dynamic — AI' },
+  { type: 'database', label: 'Database' },
+] as const;
+
+function ResolverEditor({
+  resolver,
+  onChange,
+}: {
+  resolver: Resolver;
+  onChange: (res: Resolver) => void;
+}) {
+  type ResShape = { type: string; mode?: string };
+  const current = { type: resolver.type, mode: (resolver as ResShape).mode } as ResShape;
+
+  // Determine active preset
+  const activeIdx = RESOLVER_TYPES.findIndex(
+    (r) => r.type === current.type && (r as ResShape).mode === current.mode,
+  );
+  const active = activeIdx >= 0 ? RESOLVER_TYPES[activeIdx] : RESOLVER_TYPES[0];
+
+  return (
+    <div>
+      <select
+        value={activeIdx >= 0 ? activeIdx : 0}
+        onChange={(e) => {
+          const selected = RESOLVER_TYPES[Number(e.target.value)];
+          onChange(buildResolver(selected));
+        }}
+        style={selectStyle}
+      >
+        {RESOLVER_TYPES.map((r, i) => (
+          <option key={i} value={i}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+
+      <div style={{ marginTop: 6 }}>
+        {active.type === 'static' && (
+          <ResolverFields label="Value">
+            <input
+              value={String((resolver as { value: string | number | boolean }).value ?? '')}
+              onChange={(e) => onChange({ type: 'static', value: e.target.value })}
+              style={fieldStyle}
+              placeholder="Value"
+            />
+          </ResolverFields>
+        )}
+        {active.type === 'dynamic' && active.mode === 'array' && (
+          <ResolverFields label="Values (JSON array)">
+            <JsonArrayInput
+              values={(resolver as { values?: (string | number | boolean)[] }).values ?? []}
+              onCommit={(values) =>
+                onChange({
+                  type: 'dynamic',
+                  mode: 'array',
+                  values,
+                  order: (resolver as { order?: 'random' | 'sequential' }).order ?? 'random',
+                })
+              }
+            />
+            <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <input
+                type="checkbox"
+                checked={(resolver as { order?: string }).order === 'sequential'}
+                onChange={(e) =>
+                  onChange({
+                    ...(resolver as object),
+                    order: e.target.checked ? 'sequential' : 'random',
+                  } as Resolver)
+                }
+              />
+              Sequential
+            </label>
+          </ResolverFields>
+        )}
+        {active.type === 'dynamic' && active.mode === 'ai' && (
+          <ResolverFields label="AI prompt">
+            <textarea
+              value={(resolver as { prompt: string }).prompt ?? ''}
+              onChange={(e) =>
+                onChange({
+                  type: 'dynamic',
+                  mode: 'ai',
+                  prompt: e.target.value,
+                  provider: (resolver as { provider: string }).provider ?? 'configured-default',
+                })
+              }
+              style={{ ...fieldStyle, minHeight: 40, resize: 'vertical' }}
+              placeholder="Describe the value you want"
+            />
+            <InlineInput
+              label="Provider"
+              value={(resolver as { provider: string }).provider ?? 'configured-default'}
+              onChange={(v) =>
+                onChange({
+                  ...(resolver as object),
+                  provider: v || 'configured-default',
+                } as Resolver)
+              }
+              compact
+            />
+          </ResolverFields>
+        )}
+        {active.type === 'database' && (
+          <ResolverFields label="Database query">
+            <InlineInput
+              label="Data source"
+              value={(resolver as { dataSourceRef: string }).dataSourceRef ?? ''}
+              onChange={(v) =>
+                onChange({ ...(resolver as object), dataSourceRef: v } as Resolver)
+              }
+              compact
+            />
+            <div style={{ marginTop: 4 }}>
+              <textarea
+                value={(resolver as { query: string }).query ?? ''}
+                onChange={(e) =>
+                  onChange({
+                    ...(resolver as object),
+                    query: e.target.value,
+                  } as Resolver)
+                }
+                style={{ ...fieldStyle, minHeight: 40, resize: 'vertical' }}
+                placeholder="SELECT email FROM users LIMIT 1"
+              />
+            </div>
+          </ResolverFields>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Free-typing JSON editor for the dynamic-array value list. A controlled
+ * input bound straight to JSON.stringify(values) is uneditable: every
+ * intermediate keystroke is invalid JSON, gets discarded, and the field
+ * snaps back. So keep a local draft and only commit parses that yield an
+ * array; an invalid draft is flagged, never sent upstream.
+ */
+function JsonArrayInput({
+  values,
+  onCommit,
+}: {
+  values: (string | number | boolean)[];
+  onCommit: (values: (string | number | boolean)[]) => void;
+}) {
+  const [draft, setDraft] = useState(() => JSON.stringify(values));
+  let invalid = false;
+  try {
+    invalid = !Array.isArray(JSON.parse(draft));
+  } catch {
+    invalid = true;
+  }
+
+  return (
+    <input
+      value={draft}
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        try {
+          const parsed = JSON.parse(text) as unknown;
+          if (Array.isArray(parsed)) onCommit(parsed as (string | number | boolean)[]);
+        } catch {
+          // Keep typing — commit happens on the next valid parse.
+        }
+      }}
+      style={{ ...fieldStyle, ...(invalid ? { borderColor: '#c33' } : {}), width: '100%' }}
+      placeholder='["val1","val2"]'
+      aria-invalid={invalid}
+    />
+  );
+}
+
+function buildResolver(selected: (typeof RESOLVER_TYPES)[number]): Resolver {
+  if (selected.type === 'static') return { type: 'static', value: '' };
+  if (selected.type === 'dynamic' && selected.mode === 'array')
+    return { type: 'dynamic', mode: 'array', values: [], order: 'random' };
+  if (selected.type === 'dynamic' && selected.mode === 'ai')
+    return { type: 'dynamic', mode: 'ai', prompt: '', provider: 'configured-default' };
+  if (selected.type === 'database')
+    return { type: 'database', dataSourceRef: '', query: '' };
+  return { type: 'static', value: '' };
+}
+
+// ── Assertion editor ──
+
+function AssertionEditor({
+  step,
+  onChange,
+}: {
+  step: Step & { action: 'assert' };
+  onChange: (patch: Partial<Step>) => void;
+}) {
+  const patch = (extra: Partial<Step>) => onChange(extra);
+
+  switch (step.assertion) {
+    case 'elementVisible':
+    case 'elementNotVisible':
+    case 'elementEnabled':
+    case 'elementDisabled':
+      return (
+        <div style={{ fontSize: 11, color: '#666' }}>
+          Uses the selector above. No extra parameters.
+        </div>
+      );
+
+    case 'textContains':
+      return (
+        <div>
+          <InlineInput
+            value={step.value}
+            onChange={(v) => patch({ value: v } as Partial<Step>)}
+            placeholder="Substring to find"
+          />
+          <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <input
+              type="checkbox"
+              checked={step.caseInsensitive ?? false}
+              onChange={(e) => patch({ caseInsensitive: e.target.checked } as Partial<Step>)}
+            />
+            Case insensitive
+          </label>
+        </div>
+      );
+
+    case 'textEquals':
+      return (
+        <InlineInput
+          value={step.value}
+          onChange={(v) => patch({ value: v } as Partial<Step>)}
+          placeholder="Exact text"
+        />
+      );
+
+    case 'inputValue':
+      return (
+        <InlineInput
+          value={step.value}
+          onChange={(v) => patch({ value: v } as Partial<Step>)}
+          placeholder="Expected value"
+        />
+      );
+
+    case 'urlMatches':
+      return (
+        <div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <select
+              value={step.patternType ?? 'glob'}
+              onChange={(e) => patch({ patternType: e.target.value as 'glob' | 'regex' } as Partial<Step>)}
+              style={selectStyle}
+            >
+              <option value="glob">Glob</option>
+              <option value="regex">Regex</option>
+            </select>
+            <input
+              value={step.pattern}
+              onChange={(e) => patch({ pattern: e.target.value } as Partial<Step>)}
+              style={fieldStyle}
+              placeholder={step.patternType === 'regex' ? '\\/orders\\/\\d+' : '**/orders/*'}
+            />
+          </div>
+        </div>
+      );
+
+    case 'elementCount':
+      return (
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <select
+            value={step.comparator ?? 'eq'}
+            onChange={(e) => patch({ comparator: e.target.value as 'eq' | 'gte' | 'lte' } as Partial<Step>)}
+            style={selectStyle}
+          >
+            <option value="eq">=</option>
+            <option value="gte">≥</option>
+            <option value="lte">≤</option>
+          </select>
+          <input
+            type="number"
+            value={String(step.count ?? 0)}
+            onChange={(e) => patch({ count: Number(e.target.value) || 0 } as Partial<Step>)}
+            style={{ ...fieldStyle, width: 60 }}
+          />
+        </div>
+      );
+
+    default:
+      return <div style={{ fontSize: 11, color: '#c33' }}>Unknown assertion type</div>;
+  }
+}
+
+// ── Shared UI helpers ──
 
 function StepIcon({ action }: { action: string }) {
   const icons: Record<string, string> = {
@@ -171,10 +544,7 @@ function describeStep(step: Step, advanced: boolean): string {
   }
 }
 
-function assertionDescription(
-  step: Step & { action: 'assert' },
-  advanced: boolean,
-): string {
+function assertionDescription(step: Step & { action: 'assert' }, advanced: boolean): string {
   const label = (sel: { strategy: string; value: string }) => selectorLabel(sel, advanced);
   switch (step.assertion) {
     case 'elementVisible':
@@ -200,10 +570,6 @@ function assertionDescription(
   }
 }
 
-/**
- * Simple mode is for POs/QAs — never show raw selector syntax there
- * (Constitution: plain language). Advanced mode shows the full selector.
- */
 function selectorLabel(sel: { strategy: string; value: string }, advanced: boolean): string {
   return advanced ? `${sel.strategy}="${sel.value}"` : `"${sel.value}"`;
 }
@@ -240,11 +606,84 @@ function MiniBtn({
   );
 }
 
-const inputStyle: React.CSSProperties = {
+// ── Input / field helpers ──
+
+function FieldGroup({ children, label }: { children: React.ReactNode; label?: string }) {
+  return (
+    <div style={{ marginTop: 8, paddingLeft: 26, fontSize: 11 }}>
+      {label && <FieldLabel>{label}</FieldLabel>}
+      {children}
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <div style={{ color: '#666', marginBottom: 2 }}>{children}</div>;
+}
+
+function ResolverFields({ children, label }: { children: React.ReactNode; label?: string }) {
+  return (
+    <div style={{ marginTop: 4 }}>
+      {label && <FieldLabel>{label}</FieldLabel>}
+      {children}
+    </div>
+  );
+}
+
+function InlineInput({
+  value,
+  onChange,
+  placeholder,
+  label,
+  compact,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  label?: string;
+  compact?: boolean;
+}) {
+  return (
+    <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+      {label && <span style={{ whiteSpace: 'nowrap', color: '#666' }}>{label}:</span>}
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...fieldStyle, width: compact ? 80 : '100%' }}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+const card: React.CSSProperties = {
+  padding: '8px 10px',
+  marginBottom: 6,
+  border: '1px solid #e0e0e0',
+  borderRadius: 8,
+  background: '#fafafa',
+};
+
+const fieldStyle: React.CSSProperties = {
   fontSize: 11,
   padding: '3px 6px',
   border: '1px solid #ddd',
   borderRadius: 4,
-  width: '100%',
   boxSizing: 'border-box',
+};
+
+const selectStyle: React.CSSProperties = {
+  fontSize: 11,
+  padding: '3px 4px',
+  border: '1px solid #ddd',
+  borderRadius: 4,
+  background: '#fff',
+};
+
+const num: React.CSSProperties = {
+  fontSize: 11,
+  color: '#999',
+  minWidth: 18,
+  marginTop: 2,
+  textAlign: 'center',
 };
