@@ -3,6 +3,7 @@ import { fakeBrowser } from 'wxt/testing';
 import type { Step } from '@aitomate/schema';
 import {
   buildScenarioJson,
+  buildSuiteZip,
   deleteScenario,
   importScenario,
   listScenarios,
@@ -23,7 +24,7 @@ beforeEach(() => {
 
 describe('buildScenarioJson', () => {
   it('produces a document that round-trips through importScenario', () => {
-    const json = buildScenarioJson(steps, 'Checkout');
+    const json = buildScenarioJson(steps, { name: 'Checkout' });
     const result = importScenario(json);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -35,6 +36,22 @@ describe('buildScenarioJson', () => {
   it('falls back to a default name', () => {
     const result = importScenario(buildScenarioJson(steps));
     expect(result.ok && result.scenario.meta.name).toBe('Untitled Scenario');
+  });
+
+  it('includes description, baseUrl, and tags when provided', () => {
+    const json = buildScenarioJson(steps, {
+      name: 'Full',
+      description: 'My scenario',
+      baseUrl: '{{BASE_URL}}',
+      tags: ['smoke', 'regression'],
+    });
+    const result = importScenario(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.scenario.meta.description).toBe('My scenario');
+      expect(result.scenario.meta.baseUrl).toBe('{{BASE_URL}}');
+      expect(result.scenario.meta.tags).toEqual(['smoke', 'regression']);
+    }
   });
 });
 
@@ -56,9 +73,61 @@ describe('importScenario', () => {
   });
 });
 
+describe('buildSuiteZip', () => {
+  it('produces a valid ZIP blob from stored scenarios', async () => {
+    const a = importScenario(buildScenarioJson(steps, { name: 'Alpha' }));
+    const b = importScenario(buildScenarioJson(steps, { name: 'Beta' }));
+    if (!a.ok || !b.ok) throw new Error('fixtures failed');
+
+    const blob = buildSuiteZip([
+      { id: '1', name: 'Alpha', scenario: a.scenario, importedAt: 1 },
+      { id: '2', name: 'Beta', scenario: b.scenario, importedAt: 2 },
+    ]);
+
+    expect(blob.size).toBeGreaterThan(100);
+    // ZIP signature at offset 0
+    const buf = await blob.arrayBuffer();
+    const header = new DataView(buf);
+    expect(header.getUint32(0, true)).toBe(0x04034b50);
+
+    // EOCD signature near the end (last 22+ bytes)
+    const eocd = new DataView(buf, buf.byteLength - 22);
+    expect(eocd.getUint32(0, true)).toBe(0x06054b50);
+    expect(eocd.getUint16(10, true)).toBe(2); // 2 entries
+  });
+
+  it('gives colliding sanitized names distinct filenames in the archive', async () => {
+    const a = importScenario(buildScenarioJson(steps, { name: 'Login Test' }));
+    const b = importScenario(buildScenarioJson(steps, { name: 'Login Test' }));
+    if (!a.ok || !b.ok) throw new Error('fixtures failed');
+
+    const blob = buildSuiteZip([
+      { id: '1', name: 'Login Test', scenario: a.scenario, importedAt: 1 },
+      { id: '2', name: 'Login Test', scenario: b.scenario, importedAt: 2 },
+    ]);
+    const buf = await blob.arrayBuffer();
+    expect(new Set(readZipFilenames(buf)).size).toBe(2);
+  });
+});
+
+/** Read local-file-header filenames from a ZIP buffer (store method only). */
+function readZipFilenames(buf: ArrayBuffer): string[] {
+  const view = new DataView(buf);
+  const decoder = new TextDecoder();
+  const names: string[] = [];
+  let offset = 0;
+  while (offset < buf.byteLength && view.getUint32(offset, true) === 0x04034b50) {
+    const nameLen = view.getUint16(offset + 26, true);
+    const dataLen = view.getUint32(offset + 22, true);
+    names.push(decoder.decode(new Uint8Array(buf, offset + 30, nameLen)));
+    offset += 30 + nameLen + dataLen;
+  }
+  return names;
+}
+
 describe('scenario storage', () => {
   it('saves, lists, and deletes scenarios', async () => {
-    const parsed = importScenario(buildScenarioJson(steps, 'Login'));
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Login' }));
     if (!parsed.ok) throw new Error('fixture failed to parse');
 
     const entry = await saveScenario(parsed.scenario);

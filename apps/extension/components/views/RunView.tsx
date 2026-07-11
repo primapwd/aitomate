@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import {
+  buildSuiteZip,
   deleteScenario,
+  downloadBlob,
   importScenario,
   listScenarios,
   pickFile,
@@ -96,6 +98,12 @@ export default function RunView() {
     [refresh],
   );
 
+  const handleExportSuite = useCallback(() => {
+    if (scenarios.length === 0) return;
+    const blob = buildSuiteZip(scenarios);
+    downloadBlob(blob, 'aitomate-suite.zip');
+  }, [scenarios]);
+
   return (
     <section>
       <p style={{ fontSize: 13, color: '#555', margin: '0 0 12px' }}>
@@ -165,6 +173,13 @@ export default function RunView() {
               </div>
             </div>
           ))}
+          {scenarios.length > 1 && (
+            <div style={{ marginTop: 10, textAlign: 'center' }}>
+              <button onClick={handleExportSuite} style={btnStyle}>
+                Export suite ({scenarios.length} scenarios) as ZIP
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>

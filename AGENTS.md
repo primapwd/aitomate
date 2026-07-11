@@ -67,16 +67,19 @@ decision changes; bump its version and changelog.
   input bound to JSON.stringify is uneditable — intermediate keystrokes are
   invalid JSON). Assertion *kind* is not switchable and per-step session
   marker has no schema field yet — both deferred, marker to T2.8).
-  T2.7 is partial: single-scenario import/export works (`lib/import-export.ts`
-  — export builds a schema-valid `.aitomate.json` from recorded steps, import
-  validates via `safeParseScenario` and stores in `storage.local` under
+  T2.7 (`lib/import-export.ts` — single-scenario export builds a schema-valid
+  `.aitomate.json` from recorded steps + meta (name/description/baseUrl/tags);
+  import validates via `safeParseScenario`, stores in `storage.local` under
   `aitomate:scenarios`; Run view lists/runs/deletes stored scenarios and
-  re-enables its Run button via the `aitomate:runner:state` runtime broadcast,
-  which carries `tabId` — panels must filter their own tab). Suite-as-zip
-  export is NOT done, so the spec checkbox stays unchecked.
-- Next: finish T2.7 (suite export as zip), T2.8 (scenario chaining +
-  `meta.sessionMarker`), T4.2 (Run view run-report UI; runs driven via
-  `aitomate:runner:play|pause|resume|stop`).
+  re-enables its Run button via the `aitomate:runner:state` runtime
+  broadcast, which carries `tabId` — panels must filter their own tab.
+  Suite export is a hand-rolled ZIP (`buildSuiteZip`, store method, no
+  external dep) — verified byte-for-byte against `unzip`/Python `zipfile`;
+  filenames are deduped when scenario names sanitize to the same string,
+  e.g. two scenarios both named "Login Test" or non-ASCII names that all
+  collapse to `___`).
+- Next: T2.8 (scenario chaining + `meta.sessionMarker`), T4.2 (Run view
+  run-report UI; runs driven via `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands

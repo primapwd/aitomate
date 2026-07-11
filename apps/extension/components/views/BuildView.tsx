@@ -4,7 +4,11 @@ import type { Step } from '@aitomate/schema';
 import type { RecorderCommand, RecorderPopupMessage } from '@/lib/recorder/messages';
 import { initialSessionState, type RecorderSessionState } from '@/lib/recorder/session';
 import { getUiPrefs, setUiPref, type UiPrefs } from '@/lib/ui-prefs';
-import { buildScenarioJson, downloadJson } from '@/lib/import-export';
+import {
+  buildScenarioJson,
+  downloadJson,
+  type ExportMeta,
+} from '@/lib/import-export';
 import RecordingControls from './build/RecordingControls';
 import StepList from './build/StepList';
 
@@ -16,6 +20,9 @@ export default function BuildView() {
   const [recorderState, setRecorderState] = useState<RecorderSessionState>(initialSessionState);
   const [steps, setSteps] = useState<Step[]>([]);
   const [scenarioName, setScenarioName] = useState('');
+  const [scenarioDesc, setScenarioDesc] = useState('');
+  const [scenarioBaseUrl, setScenarioBaseUrl] = useState('');
+  const [scenarioTags, setScenarioTags] = useState('');
   const mounted = useRef(true);
 
   // Load UI prefs + current tab on mount
@@ -150,10 +157,19 @@ export default function BuildView() {
 
   const handleExport = useCallback(() => {
     if (steps.length === 0) return;
+    const meta: ExportMeta = {
+      name: scenarioName.trim() || undefined,
+      description: scenarioDesc.trim() || undefined,
+      baseUrl: scenarioBaseUrl.trim() || undefined,
+      tags: scenarioTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+    };
+    const json = buildScenarioJson(steps, meta);
     const name = scenarioName.trim() || 'scenario';
-    const json = buildScenarioJson(steps, name);
     downloadJson(json, name);
-  }, [steps, scenarioName]);
+  }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioTags]);
 
   if (!tabId) {
     return (
@@ -203,32 +219,40 @@ export default function BuildView() {
 
       {steps.length > 0 && (
         <>
-          <div style={{ marginTop: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input
-              value={scenarioName}
-              onChange={(e) => setScenarioName(e.target.value)}
-              placeholder="Scenario name"
-              style={{
-                flex: 1,
-                fontSize: 12,
-                padding: '4px 8px',
-                border: '1px solid #ddd',
-                borderRadius: 4,
-              }}
-            />
-            <button onClick={handleExport} style={{
-              fontSize: 12,
-              padding: '4px 12px',
-              border: '1px solid #1a1a1a',
-              borderRadius: 6,
-              background: '#1a1a1a',
-              color: '#fff',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}>
-              Export
-            </button>
-          </div>
+          <details style={{ marginTop: 12 }}>
+            <summary style={exportSummary}>Export scenario</summary>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <input
+                value={scenarioName}
+                onChange={(e) => setScenarioName(e.target.value)}
+                placeholder="Scenario name"
+                style={exportInput}
+              />
+              <input
+                value={scenarioDesc}
+                onChange={(e) => setScenarioDesc(e.target.value)}
+                placeholder="Description (optional)"
+                style={exportInput}
+              />
+              <input
+                value={scenarioBaseUrl}
+                onChange={(e) => setScenarioBaseUrl(e.target.value)}
+                placeholder="Base URL (optional, e.g. https://app.test or {{BASE_URL}})"
+                style={exportInput}
+              />
+              <input
+                value={scenarioTags}
+                onChange={(e) => setScenarioTags(e.target.value)}
+                placeholder="Tags (comma-separated, optional)"
+                style={exportInput}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={handleExport} style={exportBtn}>
+                  Export as .aitomate.json
+                </button>
+              </div>
+            </div>
+          </details>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6, textAlign: 'center' }}>
             {steps.length} step{steps.length === 1 ? '' : 's'} recorded
           </div>
@@ -237,3 +261,30 @@ export default function BuildView() {
     </section>
   );
 }
+
+const exportSummary: React.CSSProperties = {
+  fontSize: 12,
+  color: '#555',
+  cursor: 'pointer',
+  padding: '4px 0',
+};
+
+const exportInput: React.CSSProperties = {
+  fontSize: 12,
+  padding: '4px 8px',
+  border: '1px solid #ddd',
+  borderRadius: 4,
+  width: '100%',
+  boxSizing: 'border-box',
+};
+
+const exportBtn: React.CSSProperties = {
+  fontSize: 12,
+  padding: '5px 14px',
+  border: '1px solid #1a1a1a',
+  borderRadius: 6,
+  background: '#1a1a1a',
+  color: '#fff',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
