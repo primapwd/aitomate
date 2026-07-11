@@ -4,6 +4,7 @@ import type { Step } from '@aitomate/schema';
 import type { RecorderCommand, RecorderPopupMessage } from '@/lib/recorder/messages';
 import { initialSessionState, type RecorderSessionState } from '@/lib/recorder/session';
 import { getUiPrefs, setUiPref, type UiPrefs } from '@/lib/ui-prefs';
+import { buildScenarioJson, downloadJson } from '@/lib/import-export';
 import RecordingControls from './build/RecordingControls';
 import StepList from './build/StepList';
 
@@ -14,6 +15,7 @@ export default function BuildView() {
   const [tabId, setTabId] = useState<number | null>(null);
   const [recorderState, setRecorderState] = useState<RecorderSessionState>(initialSessionState);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [scenarioName, setScenarioName] = useState('');
   const mounted = useRef(true);
 
   // Load UI prefs + current tab on mount
@@ -146,6 +148,13 @@ export default function BuildView() {
     void setUiPref('buildMode', next);
   };
 
+  const handleExport = useCallback(() => {
+    if (steps.length === 0) return;
+    const name = scenarioName.trim() || 'scenario';
+    const json = buildScenarioJson(steps, name);
+    downloadJson(json, name);
+  }, [steps, scenarioName]);
+
   if (!tabId) {
     return (
       <section>
@@ -193,9 +202,37 @@ export default function BuildView() {
       />
 
       {steps.length > 0 && (
-        <div style={{ fontSize: 11, color: '#aaa', marginTop: 8, textAlign: 'center' }}>
-          {steps.length} step{steps.length === 1 ? '' : 's'} recorded
-        </div>
+        <>
+          <div style={{ marginTop: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              value={scenarioName}
+              onChange={(e) => setScenarioName(e.target.value)}
+              placeholder="Scenario name"
+              style={{
+                flex: 1,
+                fontSize: 12,
+                padding: '4px 8px',
+                border: '1px solid #ddd',
+                borderRadius: 4,
+              }}
+            />
+            <button onClick={handleExport} style={{
+              fontSize: 12,
+              padding: '4px 12px',
+              border: '1px solid #1a1a1a',
+              borderRadius: 6,
+              background: '#1a1a1a',
+              color: '#fff',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}>
+              Export
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6, textAlign: 'center' }}>
+            {steps.length} step{steps.length === 1 ? '' : 's'} recorded
+          </div>
+        </>
       )}
     </section>
   );

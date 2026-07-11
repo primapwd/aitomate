@@ -92,11 +92,18 @@ async function broadcastRunnerState(
   tabId: number,
   state: RunnerSessionState,
 ): Promise<void> {
-  const message: RunnerStateMessage = { type: 'aitomate:runner:state', state };
+  const message: RunnerStateMessage = { type: 'aitomate:runner:state', tabId, state };
   try {
     await browser.tabs.sendMessage(tabId, message);
   } catch {
-    // UI panel may not be open in this tab — fine.
+    // No content script in this tab — fine.
+  }
+  // The popup/side panel listens on the runtime channel, not the tab channel;
+  // without this the Run view never learns a run finished.
+  try {
+    await browser.runtime.sendMessage(message);
+  } catch {
+    // No panel listening — fine.
   }
 }
 

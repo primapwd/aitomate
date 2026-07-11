@@ -29,9 +29,13 @@ export type RunnerContentEvent =
   | { type: 'aitomate:runner:step-executed'; stepId: string; passed: boolean; error?: string }
   | { type: 'aitomate:runner:dom-stable' };
 
-/** Background → UI (popup/sidepanel), broadcast on every state change. */
+/**
+ * Background → UI (popup/sidepanel), broadcast on every state change.
+ * Carries the tab id so an open panel can ignore other tabs' runs.
+ */
 export type RunnerStateMessage = {
   type: 'aitomate:runner:state';
+  tabId: number;
   state: RunnerSessionState;
 };
 
