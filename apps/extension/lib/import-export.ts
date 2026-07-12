@@ -40,6 +40,11 @@ export async function listScenarios(): Promise<StoredScenario[]> {
   return (stored[SCENARIOS_KEY] as StoredScenario[]) ?? [];
 }
 
+export async function findScenarioByName(name: string): Promise<StoredScenario | undefined> {
+  const all = await listScenarios();
+  return all.find((s) => s.name === name || s.scenario.meta.name === name);
+}
+
 export async function saveScenario(scenario: Scenario): Promise<StoredScenario> {
   const all = await listScenarios();
   const entry: StoredScenario = {

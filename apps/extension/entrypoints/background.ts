@@ -14,6 +14,8 @@ import {
   type TabRecording,
 } from '@/lib/recorder/store';
 import type { RunnerCommand, RunnerStateMessage, StepResult } from '@/lib/runner/messages';
+import { findScenarioByName } from '@/lib/import-export';
+import { runSetup } from '@/lib/runner/chaining';
 import {
   initialRunnerState,
   reduceRunnerState,
@@ -128,6 +130,24 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
   run.results = [];
   await saveRun(tabId, run);
   await broadcastRunnerState(tabId, run.session);
+
+  // ── Setup scenario (FR-10, T2.8) ──
+  if (scenario.setup) {
+    const setupOutcome = await runSetup(tabId, scenario.setup, findScenarioByName, {
+      stopped: () => ctrl.stopped,
+    });
+    if (!setupOutcome.ok) {
+      // Setup failed — report and stop the main run
+      run.session = reduceRunnerState(run.session, {
+        type: 'STEP_FAIL',
+        error: setupOutcome.error,
+      });
+      await saveRun(tabId, run);
+      await broadcastRunnerState(tabId, run.session);
+      deleteControl(tabId);
+      return;
+    }
+  }
 
   for (let i = 0; i < scenario.steps.length; i++) {
     // Check stop signal

@@ -5,6 +5,7 @@ import {
   buildScenarioJson,
   buildSuiteZip,
   deleteScenario,
+  findScenarioByName,
   importScenario,
   listScenarios,
   saveScenario,
@@ -124,6 +125,22 @@ function readZipFilenames(buf: ArrayBuffer): string[] {
   }
   return names;
 }
+
+describe('findScenarioByName', () => {
+  it('finds a scenario by saved name', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Login' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+    await saveScenario(parsed.scenario);
+
+    const found = await findScenarioByName('Login');
+    expect(found).toBeDefined();
+    expect(found!.scenario.meta.name).toBe('Login');
+  });
+
+  it('returns undefined for unknown name', async () => {
+    expect(await findScenarioByName('nope')).toBeUndefined();
+  });
+});
 
 describe('scenario storage', () => {
   it('saves, lists, and deletes scenarios', async () => {

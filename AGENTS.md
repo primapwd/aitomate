@@ -78,8 +78,19 @@ decision changes; bump its version and changelog.
   filenames are deduped when scenario names sanitize to the same string,
   e.g. two scenarios both named "Login Test" or non-ASCII names that all
   collapse to `___`).
-- Next: T2.8 (scenario chaining + `meta.sessionMarker`), T4.2 (Run view
-  run-report UI; runs driven via `aitomate:runner:play|pause|resume|stop`).
+  T2.8 (scenario chaining in `lib/runner/chaining.ts` — `runSetup`/
+  `checkSessionMarker` extracted out of background.ts and unit-tested with
+  fakeBrowser, same pattern as step-executor.ts, since this decision logic
+  — chain-depth guard, marker skip, plain-language "Setup failed:" messages
+  — is too significant to leave untested as background "integration glue".
+  `meta.sessionMarker` is checked as a single-shot assertion with no retry
+  and a short timeout — it answers "is the session active right now", not
+  "wait for it to become active"; session expiry is the expected eventual
+  outcome, not a transient failure, so retrying it the way a normal assert
+  step does would burn 30s+ per setup-guarded run for nothing. One level of
+  chaining only — a setup declaring its own setup is rejected).
+- Next: T4.2 (Run view run-report UI; runs driven via
+  `aitomate:runner:play|pause|resume|stop`).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
