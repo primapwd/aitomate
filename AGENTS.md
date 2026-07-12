@@ -150,6 +150,50 @@ Planned (not yet created): `packages/bridge` (M2, local DB sidecar), `examples/`
   selectors (Constitution: fail loud, fail clear).
 - License: MIT.
 
+## Common Mistakes (read before starting a task)
+
+Patterns caught in review across T2.2–T2.8, most repeated first. Check your
+own diff against this list before calling a task done.
+
+- **Decision logic written in an entrypoint instead of `lib/` with a test.**
+  `entrypoints/background.ts` and `entrypoints/content.ts` are integration
+  glue (wiring + browser APIs) — not the place for anything with a branch a
+  reviewer would need to reason about. If it has an if/switch that encodes a
+  rule (a guard, a retry policy, a message-shape decision), it belongs in
+  `lib/` with a `.test.ts` sibling, even if it needs `fakeBrowser` to test
+  (see `step-executor.ts`, `chaining.ts`). Repeated in T2.2 (DOM helpers),
+  T2.3 (value resolution), T2.8 (setup chaining) — each time the fix was the
+  same extraction.
+- **Dead or half-finished code left in place.** A cache that's written but
+  never read, a comment describing behavior the code doesn't actually do, a
+  leftover reasoning note — delete it or wire it up, don't ship it half-done.
+  (T2.2 had a dead reduce call + stray reasoning comment; T2.8 had a `Set`
+  that was populated but never consulted.)
+- **Plain-language errors leak internals.** Never put a task/ticket ID
+  (`"not implemented (T3.2)"`) or a raw selector in a message a PO/QA sees.
+  Simple mode never shows selector syntax at all — only Advanced does
+  (Constitution: fail loud, fail clear). Caught in T2.3 and T2.6.
+  Also don't retry/poll a check that answers "is this true right now" (a
+  session marker, a precondition) the same way you'd retry a flaky action —
+  if the expected eventual state is "false", retrying just burns time (T2.8).
+- **A new broadcast channel doesn't reach every listener.** This codebase
+  has two: `tabs.sendMessage` (content script in a specific tab) and
+  `runtime.sendMessage` (popup/side panel, not tab-scoped). Adding a UI that
+  listens on the runtime channel means the background sender needs a
+  matching broadcast there too, tagged with `tabId` so a panel can filter to
+  its own tab — don't assume the existing tab-scoped broadcast covers a new
+  UI surface. Caught in T2.6 (recorder state) and T2.7 (runner state).
+- **State-machine edge cases not walked through.** Before shipping a
+  reducer/loop with persisted state, trace: What if this runs twice
+  concurrently? What if the service worker restarts mid-run (storage.session
+  persists, in-memory control maps don't)? What if the input is empty? Each
+  of these had a real bug in T2.2 (stale control map, permanent "playing"
+  lock, zero-step scenario stuck).
+- **New `lib/` file shipped without a paired `.test.ts`.** Even glue-ish
+  code (import/export, message builders) gets a test if it lives in `lib/` —
+  it's the thing that makes it reviewable without re-deriving the logic by
+  eye. Caught in T2.7 (`import-export.ts` initially had zero tests).
+
 ## Tooling Notes
 
 - Zod v4 (`zod@^4`) — use v4 APIs (`z.core.$ZodIssue`, discriminated unions
