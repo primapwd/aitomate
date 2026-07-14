@@ -21,7 +21,7 @@ test('popup renders the Build/Run/Settings shell, defaulting to Run', async ({
 
   const runTab = page.getByRole('button', { name: 'Run' });
   const buildTab = page.getByRole('button', { name: 'Build' });
-  const settingsTab = page.getByRole('button', { name: 'Settings' });
+  const settingsTab = page.getByRole('button', { name: 'Settings', exact: true });
   await expect(runTab).toBeVisible();
   await expect(buildTab).toBeVisible();
   await expect(settingsTab).toBeVisible();

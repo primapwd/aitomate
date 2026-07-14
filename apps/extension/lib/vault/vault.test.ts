@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import { browser } from 'wxt/browser';
-import { Vault, VaultLockedError, VaultNotInitializedError, WrongPassphraseError } from './vault';
+import {
+  Vault,
+  VaultLockedError,
+  VaultNotInitializedError,
+  WrongPassphraseError,
+  unlockOrInitialize,
+} from './vault';
 
 // Low iteration count keeps PBKDF2 fast in tests; production default is 600k.
 const TEST_ITERATIONS = 10_000;
@@ -49,6 +55,37 @@ describe('vault lifecycle', () => {
     const vault = makeVault();
     await vault.initialize('one');
     await expect(vault.initialize('two')).rejects.toThrow(/already exists/);
+  });
+});
+
+describe('unlockOrInitialize', () => {
+  it('initializes a fresh vault', async () => {
+    const vault = makeVault();
+    await unlockOrInitialize(vault, 'passphrase');
+    expect(await vault.getStatus()).toBe('unlocked');
+  });
+
+  it('unlocks a second, separate instance pointed at the same storage', async () => {
+    // Simulates the popup creating the vault and the background instance
+    // (a different Vault object, same underlying browser.storage) learning
+    // about it afterwards — a plain initialize() on the second instance
+    // would throw "already exists" and leave it locked.
+    const popupVault = makeVault();
+    await popupVault.initialize('correct horse battery staple');
+
+    const backgroundVault = makeVault();
+    await unlockOrInitialize(backgroundVault, 'correct horse battery staple');
+    expect(await backgroundVault.getStatus()).toBe('unlocked');
+  });
+
+  it('rejects the wrong passphrase against an already-created vault', async () => {
+    const popupVault = makeVault();
+    await popupVault.initialize('right');
+
+    const backgroundVault = makeVault();
+    await expect(unlockOrInitialize(backgroundVault, 'wrong')).rejects.toBeInstanceOf(
+      WrongPassphraseError,
+    );
   });
 });
 

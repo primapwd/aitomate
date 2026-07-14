@@ -24,6 +24,8 @@ import {
 import { executeStepWithRetry } from '@/lib/runner/step-executor';
 import { clearRun, getRun, saveRun } from '@/lib/runner/store';
 import { buildLlmGenerate } from '@/lib/runner/llm/resolve-provider';
+import { unlockOrInitialize, vault } from '@/lib/vault';
+import type { VaultCommand, VaultResponse } from '@/lib/vault/messages';
 
 /**
  * Recorder (T1.x) and runner (T2.2) live side by side in the same service
@@ -223,10 +225,11 @@ export default defineBackground(() => {
       message:
         | RecorderCommand
         | RecorderEvent
-        | RunnerCommand,
+        | RunnerCommand
+        | VaultCommand,
       sender,
     ):
-      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | RecorderPopupMessage | void>
+      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | RecorderPopupMessage | VaultResponse | void>
       | void => {
       // ── Recorder handlers (T1.x) ──
       switch (message.type) {
@@ -360,6 +363,45 @@ export default defineBackground(() => {
             run.session = reduceRunnerState(run.session, { type: 'STOP' });
             await saveRun(message.tabId, run);
             await broadcastRunnerState(message.tabId, run.session);
+          })();
+
+        // ── Vault commands (T3.3) ──
+
+        case 'aitomate:vault:status':
+          return vault.getStatus().then((status) => ({ ok: true, status } as VaultResponse));
+
+        case 'aitomate:vault:initialize':
+          return (async () => {
+            try {
+              await unlockOrInitialize(vault, message.passphrase);
+              return { ok: true, status: 'unlocked' } as VaultResponse;
+            } catch (err) {
+              return { ok: false, error: (err as Error).message } as VaultResponse;
+            }
+          })();
+
+        case 'aitomate:vault:unlock':
+          return (async () => {
+            try {
+              await vault.unlock(message.passphrase);
+              return { ok: true, status: 'unlocked' } as VaultResponse;
+            } catch (err) {
+              return { ok: false, error: (err as Error).message } as VaultResponse;
+            }
+          })();
+
+        case 'aitomate:vault:lock':
+          vault.lock();
+          return Promise.resolve({ ok: true, status: 'locked' } as VaultResponse);
+
+        case 'aitomate:vault:reset':
+          return (async () => {
+            try {
+              await vault.reset();
+              return { ok: true, status: 'uninitialized' } as VaultResponse;
+            } catch (err) {
+              return { ok: false, error: (err as Error).message } as VaultResponse;
+            }
           })();
 
         default:

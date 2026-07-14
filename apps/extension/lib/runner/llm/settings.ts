@@ -12,6 +12,8 @@ export interface LlmUiSettings {
   provider: LLMConfig['provider'];
   baseUrl: string;
   model: string;
+  /** Undefined = off. */
+  reasoningEffort?: LLMConfig['reasoningEffort'];
 }
 
 const DEFAULTS: LlmUiSettings = {

@@ -246,3 +246,24 @@ export class Vault {
 
 /** Singleton for the background service worker. */
 export const vault = new Vault();
+
+/**
+ * Create-or-unlock a vault with the given passphrase.
+ *
+ * The popup and background each run their own `Vault` instance (separate JS
+ * realms, no shared in-memory `#key`) but share the same `browser.storage`
+ * backing. When the popup's own instance creates the vault first, a plain
+ * `initialize()` call against the background's instance would see the
+ * meta already on disk and throw "vault already exists" — leaving the
+ * background instance's key unset, i.e. still effectively locked, even
+ * though the UI reported success. Deriving the key via `unlock()` instead
+ * once the vault already exists is what actually unlocks that instance.
+ */
+export async function unlockOrInitialize(v: Vault, passphrase: string): Promise<void> {
+  const status = await v.getStatus();
+  if (status === 'uninitialized') {
+    await v.initialize(passphrase);
+  } else {
+    await v.unlock(passphrase);
+  }
+}

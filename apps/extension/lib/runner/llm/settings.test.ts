@@ -14,6 +14,7 @@ describe('LlmSettings', () => {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-4o-mini',
     });
+    expect(settings.reasoningEffort).toBeUndefined();
   });
 
   it('round-trips through setLlmSettings', async () => {
@@ -29,6 +30,18 @@ describe('LlmSettings', () => {
       baseUrl: 'https://api.anthropic.com/v1',
       model: 'claude-sonnet-4-20250514',
     });
+  });
+
+  it('round-trips reasoningEffort', async () => {
+    await setLlmSettings({
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'o3-mini',
+      reasoningEffort: 'high',
+    });
+
+    const loaded = await getLlmSettings();
+    expect(loaded.reasoningEffort).toBe('high');
   });
 
   it('merges partial stored data over defaults', async () => {
