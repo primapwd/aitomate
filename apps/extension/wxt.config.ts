@@ -2,6 +2,7 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  outDir: 'output',
   manifest: ({ manifestVersion }) => ({
     name: 'Aitomate',
     description: 'Collaborative, AI-assisted test automation for any web app',

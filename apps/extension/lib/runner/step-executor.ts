@@ -6,6 +6,7 @@ import type {
   StepResult,
 } from './messages';
 import { resolveStepValues, type LlmGenerateFn } from './value-resolver';
+import { debugLog } from '@/lib/debug';
 
 /**
  * Step execution with per-step retry/backoff + smart-wait (T2.2).
@@ -53,6 +54,7 @@ async function executeNavigation(
   tabId: number,
   step: Step & { action: 'navigate' },
 ): Promise<StepResult> {
+  debugLog('step-exec', `navigate tab=${tabId} url=${step.url}`);
   const startTime = performance.now();
   try {
     const url = step.url.startsWith('http') ? step.url : undefined;
@@ -107,6 +109,7 @@ async function executeDomStep(
   let lastError: string | undefined;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    debugLog('step-exec', `step=${step.id} action=${step.action} attempt=${attempt}/${maxRetries}`);
     if (signal?.stopped()) {
       return {
         stepId: step.id,

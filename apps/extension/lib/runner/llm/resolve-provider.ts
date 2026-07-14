@@ -2,6 +2,7 @@ import { vault } from '@/lib/vault';
 import { getLlmSettings } from './settings';
 import { createProvider, type LLMConfig } from './provider';
 import type { LlmGenerateFn } from '../value-resolver';
+import { debugLog } from '@/lib/debug';
 
 const VAULT_ENTRY_NAME = 'default';
 
@@ -38,6 +39,9 @@ export function buildLlmGenerate(): LlmGenerateFn {
 
     const settings = await getLlmSettings();
     const config: LLMConfig = { ...settings, apiKey: secret.apiKey };
-    return createProvider(config).generate(prompt, constraints);
+    debugLog('llm', `generate provider=${config.provider} model=${config.model}`);
+    const result = await createProvider(config).generate(prompt, constraints);
+    debugLog('llm', `generate result length=${result.length}`);
+    return result;
   };
 }

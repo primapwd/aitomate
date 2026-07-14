@@ -26,6 +26,7 @@ import { clearRun, getRun, saveRun } from '@/lib/runner/store';
 import { buildLlmGenerate } from '@/lib/runner/llm/resolve-provider';
 import { unlockOrInitialize, vault } from '@/lib/vault';
 import type { VaultCommand, VaultResponse } from '@/lib/vault/messages';
+import { debugLog } from '@/lib/debug';
 
 /**
  * Recorder (T1.x) and runner (T2.2) live side by side in the same service
@@ -124,6 +125,8 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
   runControl.set(tabId, ctrl);
   const llmGenerate = buildLlmGenerate();
 
+  debugLog('run-seq', `starting scenario="${scenario.meta.name}" tabId=${tabId} steps=${scenario.steps.length}`);
+
   // Initialise runner session
   const run = await getRun(tabId);
   run.session = reduceRunnerState(initialRunnerState, {
@@ -175,6 +178,8 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
     await saveRun(tabId, run);
     await broadcastRunnerState(tabId, run.session);
 
+    debugLog('run-seq', `step ${i} action=${step.action} id=${step.id}`);
+
     const result: StepResult = await executeStepWithRetry(
       tabId,
       step,
@@ -185,6 +190,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
     run.results.push(result);
 
     if (!result.passed) {
+      debugLog('run-seq', `step ${i} FAILED: ${result.error}`);
       run.session = reduceRunnerState(run.session, {
         type: 'STEP_FAIL',
         error: result.error ?? 'Step failed',
@@ -199,6 +205,8 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
     await saveRun(tabId, run);
     await broadcastRunnerState(tabId, run.session);
   }
+
+  debugLog('run-seq', `done status=${run.session.status} steps_completed=${run.results.length}`);
 
   // If loop completed without error and not stopped, the last STEP_COMPLETE
   // already set status to 'done'. If stopped, ensure idle state.
@@ -368,38 +376,52 @@ export default defineBackground(() => {
         // ── Vault commands (T3.3) ──
 
         case 'aitomate:vault:status':
-          return vault.getStatus().then((status) => ({ ok: true, status } as VaultResponse));
+          debugLog('vault', 'status check');
+          return vault.getStatus().then((status) => {
+            debugLog('vault', `status=${status}`);
+            return { ok: true, status } as VaultResponse;
+          });
 
         case 'aitomate:vault:initialize':
+          debugLog('vault', 'initialize');
           return (async () => {
             try {
               await unlockOrInitialize(vault, message.passphrase);
+              debugLog('vault', 'initialized + unlocked');
               return { ok: true, status: 'unlocked' } as VaultResponse;
             } catch (err) {
+              debugLog('vault', `initialize failed: ${(err as Error).message}`);
               return { ok: false, error: (err as Error).message } as VaultResponse;
             }
           })();
 
         case 'aitomate:vault:unlock':
+          debugLog('vault', 'unlock');
           return (async () => {
             try {
               await vault.unlock(message.passphrase);
+              debugLog('vault', 'unlocked');
               return { ok: true, status: 'unlocked' } as VaultResponse;
             } catch (err) {
+              debugLog('vault', `unlock failed: ${(err as Error).message}`);
               return { ok: false, error: (err as Error).message } as VaultResponse;
             }
           })();
 
         case 'aitomate:vault:lock':
           vault.lock();
+          debugLog('vault', 'locked');
           return Promise.resolve({ ok: true, status: 'locked' } as VaultResponse);
 
         case 'aitomate:vault:reset':
+          debugLog('vault', 'reset');
           return (async () => {
             try {
               await vault.reset();
+              debugLog('vault', 'reset done');
               return { ok: true, status: 'uninitialized' } as VaultResponse;
             } catch (err) {
+              debugLog('vault', `reset failed: ${(err as Error).message}`);
               return { ok: false, error: (err as Error).message } as VaultResponse;
             }
           })();

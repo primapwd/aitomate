@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { test as base, chromium, type BrowserContext } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const EXTENSION_PATH = path.join(__dirname, '../.output/chrome-mv3');
+const EXTENSION_PATH = path.join(__dirname, '../output/chrome-mv3');
 
 export const test = base.extend<{
   context: BrowserContext;

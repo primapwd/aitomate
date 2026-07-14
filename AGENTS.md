@@ -89,8 +89,38 @@ decision changes; bump its version and changelog.
   outcome, not a transient failure, so retrying it the way a normal assert
   step does would burn 30s+ per setup-guarded run for nothing. One level of
   chaining only — a setup declaring its own setup is rejected).
-- Next: T4.2 (Run view run-report UI; runs driven via
-  `aitomate:runner:play|pause|resume|stop`).
+  T3.1 (`lib/runner/llm/provider.ts` — OpenAI-compatible + Anthropic-compatible
+  adapters. Three distinct reasoning-model shapes, not one: OpenAI o1/o3 use
+  `max_completion_tokens` + `reasoning_effort`; DeepSeek-R1/deepseek-reasoner
+  are OpenAI-compatible but still use plain `max_tokens`; Anthropic extended
+  thinking is a `thinking: {budget_tokens}` block, and its response answer is
+  the first `type: "text"` content block, not `content[0]`. An empty
+  completion is a thrown error, not a silently-returned empty string — a
+  reasoning model can exhaust its budget on hidden reasoning tokens before
+  producing an answer. The response cache key includes provider+model+effort,
+  not just prompt, so switching config can't return a stale answer),
+  T3.2 (`lib/runner/value-resolver.ts` resolves `dynamic/ai` via an injected
+  `LlmGenerateFn` — but that alone doesn't make it runnable. The actual wiring
+  to a real provider is `lib/runner/llm/resolve-provider.ts`'s
+  `buildLlmGenerate()`, threaded through `executeStepWithRetry`/`runSetup` from
+  `background.ts`. A resolver module existing in isolation is not the same as
+  the feature working — check the call site actually passes the callback),
+  T3.3 (LLM provider settings UI in `components/views/SettingsView.tsx` +
+  vault message protocol in `lib/vault/messages.ts`. The popup and background
+  each run their own `Vault` instance (separate JS realms, no shared
+  in-memory key) over the same `browser.storage` — a plain `initialize()`
+  call from background after the popup already created the vault hits the
+  "already exists" guard and throws, leaving the background instance's key
+  unset (i.e. still locked) even though the UI reports success. Fixed via
+  `unlockOrInitialize()` in `lib/vault/vault.ts`, which falls back to
+  `unlock()` once the vault already exists — the two instances derive the
+  same key from the same passphrase+salt, so this always succeeds. Minimum
+  passphrase length is 8, not 4 — this vault guards API keys).
+- Next: T2.9 (Build view "Save to library" — direct `saveScenario` call,
+  no export-then-import round trip) and T2.10 (Run view "Run suite" —
+  sequential batch execution across stored scenarios). Both close gaps
+  between the shipped UI and spec §3.8/FR-5 found after T3.3 review; see
+  spec changelog 0.3.1. T4.2 (Run view run-report UI) follows after.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands

@@ -1,4 +1,5 @@
 import type { DynamicArrayResolver, DynamicAiResolver, Resolver, Step } from '@aitomate/schema';
+import { debugLog } from '@/lib/debug';
 
 /**
  * Value Resolver (T2.3): resolves a Resolver definition to a concrete value.
@@ -91,8 +92,12 @@ async function resolveAi(
   // produce the same value (saves API cost, consistent retries).
   const cacheKey = JSON.stringify({ prompt: resolver.prompt, constraints: resolver.constraints });
   const cached = aiCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    debugLog('value-resolver', `ai cache HIT prompt="${resolver.prompt.substring(0, 40)}"`);
+    return cached;
+  }
 
+  debugLog('value-resolver', `ai cache MISS prompt="${resolver.prompt.substring(0, 40)}"`);
   const result = await llmGenerate(resolver.prompt, resolver.constraints);
   aiCache.set(cacheKey, result);
   return result;

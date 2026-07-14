@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { vault, type VaultStatus } from '@/lib/vault';
 import { getLlmSettings, setLlmSettings } from '@/lib/runner/llm/settings';
+import { isDebugEnabled, setDebugEnabled } from '@/lib/debug';
 import type { VaultCommand, VaultResponse } from '@/lib/vault/messages';
 
 // ── Shared inline styles (consistent with AppShell) ──
@@ -74,6 +75,9 @@ export default function SettingsView() {
   const [newPassphrase, setNewPassphrase] = useState('');
   const [confirmPassphrase, setConfirmPassphrase] = useState('');
 
+  // Debug
+  const [debugEnabled, setDebugEnabled_] = useState(false);
+
   // LLM config
   const [provider, setProvider] = useState<'openai' | 'anthropic'>('openai');
   const [baseUrl, setBaseUrl] = useState('');
@@ -91,6 +95,8 @@ export default function SettingsView() {
     setBaseUrl(llmSettings.baseUrl);
     setModel(llmSettings.model);
     setReasoningEffort(llmSettings.reasoningEffort ?? '');
+
+    setDebugEnabled_(await isDebugEnabled());
 
     if (status === 'unlocked') {
       const secret = await vault.getEntry<{ apiKey: string }>('llm-provider', 'default');
@@ -374,6 +380,28 @@ export default function SettingsView() {
           Unlock the vault above to set an API key.
         </p>
       )}
+
+      {/* ── Debug section ── */}
+      <div style={{ ...sectionBox, marginTop: 20 }}>
+        <h3 style={{ fontSize: 13, margin: '0 0 8px', fontWeight: 600 }}>Debug</h3>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+          <input
+            type="checkbox"
+            checked={debugEnabled}
+            onChange={async (e) => {
+              const on = e.target.checked;
+              setDebugEnabled_(on);
+              await setDebugEnabled(on);
+            }}
+            style={{ margin: 0 }}
+          />
+          Verbose logging (console)
+        </label>
+        <p style={{ fontSize: 11, color: '#777', margin: '4px 0 0' }}>
+          Logs state machine transitions, step execution, and vault operations
+          to the browser console. Restart the service worker to apply.
+        </p>
+      </div>
 
       <button
         onClick={handleSave}

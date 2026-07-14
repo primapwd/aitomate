@@ -1,6 +1,7 @@
 import type { Assertion, Scenario, SetupRef, Step } from '@aitomate/schema';
 import { executeStepWithRetry } from './step-executor';
 import type { LlmGenerateFn } from './value-resolver';
+import { debugLog } from '@/lib/debug';
 
 /**
  * Scenario chaining (FR-10, T2.8): a main scenario may declare `setup`,
@@ -41,6 +42,7 @@ export async function checkSessionMarker(
     ...marker,
   } as unknown as Step;
   const result = await executeStepWithRetry(tabId, assertStep);
+  debugLog('chaining', `session-marker tab=${tabId} result=${result.passed}`);
   return result.passed;
 }
 
@@ -66,6 +68,7 @@ export async function runSetup(
   }
 
   const setupSc = stored.scenario;
+  debugLog('chaining', `run-setup ref="${setup.scenarioRef}" tab=${tabId} marker=${!!setupSc.meta.sessionMarker}`);
 
   // One level of chaining only (MVP constraint per spec §4).
   if (setupSc.setup) {

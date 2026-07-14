@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .output/
+output/
 .wxt/
 *.log
 .DS_Store
