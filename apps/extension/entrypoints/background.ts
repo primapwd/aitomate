@@ -13,8 +13,9 @@ import {
   saveRecording,
   type TabRecording,
 } from '@/lib/recorder/store';
-import type { RunnerCommand, RunnerStateMessage, StepResult } from '@/lib/runner/messages';
-import { findScenarioByName } from '@/lib/import-export';
+import type { RunnerCommand, RunnerStateMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
+import { findScenarioByName, listScenarios } from '@/lib/import-export';
+import { runSuite, type SuiteReport, type SuiteScenarioRef } from '@/lib/runner/suite';
 import { runSetup } from '@/lib/runner/chaining';
 import {
   initialRunnerState,
@@ -94,6 +95,16 @@ function deleteControl(tabId: number): void {
   runControl.delete(tabId);
 }
 
+// Suite-level stop signal (T2.10) — separate from `runControl`, which is
+// scoped to whichever single scenario is currently mid-flight. Stopping a
+// suite needs both: abort the in-flight scenario (via `runControl`) *and*
+// stop the suite loop from starting the next one (via this map).
+interface SuiteControl {
+  stopped: boolean;
+}
+
+const suiteControl = new Map<number, SuiteControl>();
+
 async function broadcastRunnerState(
   tabId: number,
   state: RunnerSessionState,
@@ -113,12 +124,22 @@ async function broadcastRunnerState(
   }
 }
 
+interface RunOutcome {
+  passed: boolean;
+  error?: string;
+  results: StepResult[];
+}
+
 /**
  * Main runner orchestration loop. Runs asynchronously in the background,
  * driven by step-executor.ts for each individual step. Checks pause/stop
  * signals between steps.
+ *
+ * Returns the outcome so a suite run (T2.10) can reuse this loop for each
+ * scenario instead of re-implementing it — the single-scenario `play`
+ * handler below just fires it and ignores the return value.
  */
-async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
+async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcome> {
   // Fresh control per run — a stale one (e.g. stopped=true left by a STOP on
   // an errored run) must not kill this run on its first iteration.
   const ctrl: RunControl = { stopped: false, pausePromise: null, resume: null };
@@ -156,7 +177,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
       await saveRun(tabId, run);
       await broadcastRunnerState(tabId, run.session);
       deleteControl(tabId);
-      return;
+      return { passed: false, error: setupOutcome.error, results: [] };
     }
   }
 
@@ -217,6 +238,12 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
   }
 
   deleteControl(tabId);
+
+  return {
+    passed: run.session.status === 'done',
+    error: run.session.status === 'error' ? run.session.error : undefined,
+    results: run.results,
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -237,7 +264,7 @@ export default defineBackground(() => {
         | VaultCommand,
       sender,
     ):
-      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | RecorderPopupMessage | VaultResponse | void>
+      | Promise<RecorderStepsResponse | RecorderSessionState | RunnerSessionState | RunnerSuiteStateMessage | RecorderPopupMessage | VaultResponse | void>
       | void => {
       // ── Recorder handlers (T1.x) ──
       switch (message.type) {
@@ -371,6 +398,85 @@ export default defineBackground(() => {
             run.session = reduceRunnerState(run.session, { type: 'STOP' });
             await saveRun(message.tabId, run);
             await broadcastRunnerState(message.tabId, run.session);
+          })();
+
+        // ── Suite runner (T2.10) ──
+
+        case 'aitomate:runner:play-suite':
+          return (async () => {
+            const tabId = message.tabId;
+            const stored = await listScenarios();
+            const refs = message.scenarioRefs;
+
+            // Resolve refs to scenarios; skip any that are missing.
+            const resolved: { ref: SuiteScenarioRef; scenario: Scenario }[] = [];
+            for (const ref of refs) {
+              const found = stored.find((s) => s.id === ref.id);
+              if (found) {
+                resolved.push({ ref, scenario: found.scenario });
+              } else {
+                debugLog('suite', `scenario not found: ${ref.name}`);
+              }
+            }
+
+            if (resolved.length === 0) {
+              const report: SuiteReport = {
+                passed: false,
+                scenarios: refs.map((r) => ({
+                  name: r.name,
+                  status: 'skipped',
+                  results: [],
+                })),
+              };
+              const suiteMsg: RunnerSuiteStateMessage = {
+                type: 'aitomate:runner:suite-state',
+                tabId,
+                suiteReport: report,
+              };
+              try { await browser.runtime.sendMessage(suiteMsg); } catch { /* no listener */ }
+              return;
+            }
+
+            const sctrl: SuiteControl = { stopped: false };
+            suiteControl.set(tabId, sctrl);
+
+            // Fire-and-forget: the suite loop runs asynchronously. Reuses
+            // runSequence per scenario instead of re-implementing the step
+            // loop — one orchestration path, not two that can drift.
+            void runSuite(
+              resolved.map((r) => r.ref),
+              async (ref) => {
+                const entry = resolved.find((r) => r.ref.id === ref.id);
+                if (!entry) {
+                  return { passed: false, error: `Scenario "${ref.name}" not found`, results: [] };
+                }
+                return runSequence(tabId, entry.scenario);
+              },
+              { stopped: () => sctrl.stopped },
+              {},
+            ).then(async (report) => {
+              suiteControl.delete(tabId);
+              const suiteMsg: RunnerSuiteStateMessage = {
+                type: 'aitomate:runner:suite-state',
+                tabId,
+                suiteReport: report,
+              };
+              try { await browser.runtime.sendMessage(suiteMsg); } catch { /* no listener */ }
+            });
+          })();
+
+        case 'aitomate:runner:stop-suite':
+          return (async () => {
+            const sctrl = suiteControl.get(message.tabId);
+            if (sctrl) sctrl.stopped = true;
+            // Also abort whichever scenario is currently mid-flight — without
+            // this, "stop" would only take effect after the in-flight
+            // scenario finishes on its own.
+            const ctrl = runControl.get(message.tabId);
+            if (ctrl) {
+              ctrl.stopped = true;
+              ctrl.resume?.();
+            }
           })();
 
         // ── Vault commands (T3.3) ──

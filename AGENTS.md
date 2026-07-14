@@ -127,10 +127,28 @@ decision changes; bump its version and changelog.
   "not saved" message instead of the same green "Saved ✓" a real save
   gets (Constitution: fail loud, fail clear — a success indicator must
   never mask a destroyed scenario)).
-- Next: T2.10 (Run view "Run suite" — sequential batch execution across
-  stored scenarios). Closes the remaining gap between the shipped UI and
-  spec FR-5 found after T3.3 review; see spec changelog 0.3.1. T4.2 (Run
-  view run-report UI) follows after.
+  T2.10 (Run view "Run all" — `lib/runner/suite.ts`'s `runSuite` is pure
+  orchestration written test-first (TDD): given scenario refs + an injected
+  `runOne` callback + a stop signal, it runs sequentially, aggregates a
+  per-scenario pass/failed/skipped report, and never touches
+  `browser.storage` or knows how a scenario actually executes — same
+  separation as `chaining.ts`'s `SetupLookup`. `background.ts` wires the
+  real callback by calling `runSequence` per scenario — do not duplicate
+  `runSequence`'s step loop inline in the suite handler; the first
+  implementation attempt copy-pasted the whole loop instead of reusing the
+  function (`runSequence` now returns `{passed, error, results}` instead of
+  `void` specifically so it can be reused this way). Suite stop is a
+  separate `suiteControl` map from the per-scenario `runControl` — stopping
+  a suite must set both: `runControl`'s `stopped` flag to cut the in-flight
+  scenario short, and `suiteControl`'s flag so `runSuite` skips the rest.
+  RunView's single-run state listener must ignore
+  `aitomate:runner:state` broadcasts while `suiteRunning` is true — each
+  scenario inside a suite broadcasts its own 'done' on the same tab, and
+  without the guard the first one resets `runTabId` to `null`, so the
+  final `suite-state` message (matched by `tabId === runTabId`) never
+  arrives and the UI is stuck on "Running…" forever).
+- Next: T4.2 (Run view run-report UI, richer than the suite pass/fail list
+  T2.10 shipped) and T2.11+ per spec §4 milestone breakdown.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -239,6 +257,15 @@ own diff against this list before calling a task done.
   destructive path, or at least say which one happened. Caught in T2.9
   (`upsertScenario`'s default `"Untitled Scenario"` name meant two unnamed
   saves silently clobbered each other, both showing "Saved ✓").
+- **A new orchestration path copy-pastes an existing one instead of reusing
+  it.** If a function already runs a scenario/step loop (`runSequence`),
+  adding a second execution mode (e.g. suite/batch) means calling it, not
+  re-typing its body inline in a new message handler — two copies of the
+  same state machine will drift the first time one gets a bugfix the other
+  doesn't. If the existing function returns `void`, that's a sign it needs
+  to start returning an outcome so it *can* be reused. Caught in T2.10 (the
+  first suite-runner draft duplicated all of `runSequence`'s step loop
+  inside the `play-suite` handler).
 
 ## Tooling Notes
 

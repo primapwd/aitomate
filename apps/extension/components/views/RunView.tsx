@@ -10,13 +10,16 @@ import {
   saveScenario,
   type StoredScenario,
 } from '@/lib/import-export';
-import type { RunnerCommand, RunnerStateMessage } from '@/lib/runner/messages';
+import type { RunnerCommand, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
+import type { SuiteReport } from '@/lib/runner/suite';
 
 export default function RunView() {
   const [scenarios, setScenarios] = useState<StoredScenario[]>([]);
   const [importError, setImportError] = useState('');
   const [runningId, setRunningId] = useState<string | null>(null);
   const [runTabId, setRunTabId] = useState<number | null>(null);
+  const [suiteRunning, setSuiteRunning] = useState(false);
+  const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
 
   const refresh = useCallback(async () => {
     const all = await listScenarios();
@@ -31,21 +34,33 @@ export default function RunView() {
   // without this it stays on "Running…" forever.
   useEffect(() => {
     const handler = (msg: unknown) => {
-      const m = msg as RunnerStateMessage;
-      if (m.type !== 'aitomate:runner:state' || m.tabId !== runTabId) return;
-      if (m.state.status === 'done' || m.state.status === 'error' || m.state.status === 'idle') {
+      const m = msg as RunnerStateMessage | RunnerSuiteStateMessage;
+      // While a suite is running, every scenario inside it broadcasts its own
+      // 'done'/'error' state on this same tab — the single-run branch below
+      // must ignore those, or it clears runTabId after the *first* scenario
+      // and the final suite-state broadcast (which checks tabId === runTabId)
+      // never matches, leaving "Running…" stuck forever.
+      if (m.type === 'aitomate:runner:state' && m.tabId === runTabId && !suiteRunning) {
+        if (m.state.status === 'done' || m.state.status === 'error' || m.state.status === 'idle') {
+          setRunningId(null);
+          setRunTabId(null);
+          if (m.state.status === 'error') {
+            setImportError(m.state.error ?? 'The run failed.');
+          }
+        }
+      }
+      if (m.type === 'aitomate:runner:suite-state' && m.tabId === runTabId) {
+        setSuiteReport(m.suiteReport);
+        setSuiteRunning(false);
         setRunningId(null);
         setRunTabId(null);
-        if (m.state.status === 'error') {
-          setImportError(m.state.error ?? 'The run failed.');
-        }
       }
     };
     browser.runtime.onMessage.addListener(handler);
     return () => {
       browser.runtime.onMessage.removeListener(handler);
     };
-  }, [runTabId]);
+  }, [runTabId, suiteRunning]);
 
   const handleImport = useCallback(async () => {
     setImportError('');
@@ -97,6 +112,37 @@ export default function RunView() {
     },
     [refresh],
   );
+
+  const handleRunAll = useCallback(async () => {
+    setImportError('');
+    setSuiteReport(null);
+    setSuiteRunning(true);
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) {
+        setImportError('No active tab found. Open a page first.');
+        setSuiteRunning(false);
+        return;
+      }
+      setRunTabId(tab.id);
+      await browser.runtime.sendMessage({
+        type: 'aitomate:runner:play-suite',
+        tabId: tab.id,
+        scenarioRefs: scenarios.map((s) => ({ id: s.id, name: s.name })),
+      } as RunnerCommand);
+    } catch (err) {
+      setImportError(String(err));
+      setSuiteRunning(false);
+    }
+  }, [scenarios]);
+
+  const handleStopSuite = useCallback(async () => {
+    if (!runTabId) return;
+    await browser.runtime.sendMessage({
+      type: 'aitomate:runner:stop-suite',
+      tabId: runTabId,
+    } as RunnerCommand);
+  }, [runTabId]);
 
   const handleExportSuite = useCallback(() => {
     if (scenarios.length === 0) return;
@@ -174,11 +220,48 @@ export default function RunView() {
             </div>
           ))}
           {scenarios.length > 1 && (
-            <div style={{ marginTop: 10, textAlign: 'center' }}>
-              <button onClick={handleExportSuite} style={btnStyle}>
-                Export suite ({scenarios.length} scenarios) as ZIP
-              </button>
-            </div>
+            <>
+              <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <button
+                  onClick={suiteRunning ? handleStopSuite : handleRunAll}
+                  style={{
+                    ...btnStyle,
+                    background: suiteRunning ? '#c33' : '#1a1a1a',
+                    color: '#fff',
+                    border: 'none',
+                  }}
+                >
+                  {suiteRunning ? 'Stop suite' : 'Run all'}
+                </button>
+                <button onClick={handleExportSuite} disabled={suiteRunning} style={btnStyle}>
+                  Export suite ({scenarios.length})
+                </button>
+              </div>
+
+              {suiteReport && (
+                <div style={{ marginTop: 12, padding: 10, background: '#f5f5f5', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                    Suite {suiteReport.passed ? 'passed' : 'failed'}
+                    <span style={{ fontWeight: 400, color: '#777', marginLeft: 6 }}>
+                      ({suiteReport.scenarios.filter((s) => s.status === 'passed').length}/
+                      {suiteReport.scenarios.length} passed)
+                    </span>
+                  </div>
+                  {suiteReport.scenarios.map((sc, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                        background: sc.status === 'passed' ? '#2e7d32' : sc.status === 'failed' ? '#d32f2f' : '#ccc',
+                      }} />
+                      <span style={{ flex: 1, color: '#333' }}>{sc.name}</span>
+                      <span style={{ fontSize: 10, color: sc.status === 'failed' ? '#d32f2f' : '#777' }}>
+                        {sc.status === 'failed' ? (sc.error ?? 'failed') : sc.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

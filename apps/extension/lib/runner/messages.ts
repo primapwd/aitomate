@@ -1,5 +1,6 @@
 import type { Scenario, Step } from '@aitomate/schema';
 import type { RunnerSessionState } from './runner-session';
+import type { SuiteReport, SuiteScenarioRef } from './suite';
 
 /**
  * Runner message protocol (T2.2). Follows the same pattern as the recorder
@@ -15,9 +16,11 @@ import type { RunnerSessionState } from './runner-session';
 /** Popup/side-panel (Run view) → background. Targets a tab explicitly. */
 export type RunnerCommand =
   | { type: 'aitomate:runner:play'; tabId: number; scenario: Scenario }
+  | { type: 'aitomate:runner:play-suite'; tabId: number; scenarioRefs: SuiteScenarioRef[] }
   | { type: 'aitomate:runner:pause'; tabId: number }
   | { type: 'aitomate:runner:resume'; tabId: number }
-  | { type: 'aitomate:runner:stop'; tabId: number };
+  | { type: 'aitomate:runner:stop'; tabId: number }
+  | { type: 'aitomate:runner:stop-suite'; tabId: number };
 
 /** Background → content script. Runs in the target tab. */
 export type RunnerContentCommand =
@@ -37,6 +40,13 @@ export type RunnerStateMessage = {
   type: 'aitomate:runner:state';
   tabId: number;
   state: RunnerSessionState;
+};
+
+/** Background → UI, broadcast during suite execution. */
+export type RunnerSuiteStateMessage = {
+  type: 'aitomate:runner:suite-state';
+  tabId: number;
+  suiteReport: SuiteReport;
 };
 
 export interface StepResult {
