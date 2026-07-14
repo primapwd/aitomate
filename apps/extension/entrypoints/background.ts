@@ -23,6 +23,7 @@ import {
 } from '@/lib/runner/runner-session';
 import { executeStepWithRetry } from '@/lib/runner/step-executor';
 import { clearRun, getRun, saveRun } from '@/lib/runner/store';
+import { buildLlmGenerate } from '@/lib/runner/llm/resolve-provider';
 
 /**
  * Recorder (T1.x) and runner (T2.2) live side by side in the same service
@@ -119,6 +120,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
   // an errored run) must not kill this run on its first iteration.
   const ctrl: RunControl = { stopped: false, pausePromise: null, resume: null };
   runControl.set(tabId, ctrl);
+  const llmGenerate = buildLlmGenerate();
 
   // Initialise runner session
   const run = await getRun(tabId);
@@ -133,9 +135,13 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
 
   // ── Setup scenario (FR-10, T2.8) ──
   if (scenario.setup) {
-    const setupOutcome = await runSetup(tabId, scenario.setup, findScenarioByName, {
-      stopped: () => ctrl.stopped,
-    });
+    const setupOutcome = await runSetup(
+      tabId,
+      scenario.setup,
+      findScenarioByName,
+      { stopped: () => ctrl.stopped },
+      llmGenerate,
+    );
     if (!setupOutcome.ok) {
       // Setup failed — report and stop the main run
       run.session = reduceRunnerState(run.session, {
@@ -167,9 +173,12 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<void> {
     await saveRun(tabId, run);
     await broadcastRunnerState(tabId, run.session);
 
-    const result: StepResult = await executeStepWithRetry(tabId, step, {
-      stopped: () => ctrl.stopped,
-    });
+    const result: StepResult = await executeStepWithRetry(
+      tabId,
+      step,
+      { stopped: () => ctrl.stopped },
+      llmGenerate,
+    );
 
     run.results.push(result);
 

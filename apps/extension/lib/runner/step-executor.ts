@@ -5,7 +5,7 @@ import type {
   RunnerContentEvent,
   StepResult,
 } from './messages';
-import { resolveStepValues } from './value-resolver';
+import { resolveStepValues, type LlmGenerateFn } from './value-resolver';
 
 /**
  * Step execution with per-step retry/backoff + smart-wait (T2.2).
@@ -37,6 +37,7 @@ export async function executeStepWithRetry(
   tabId: number,
   step: Step,
   signal?: { stopped: () => boolean },
+  llmGenerate?: LlmGenerateFn,
 ): Promise<StepResult> {
   const maxRetries = step.options?.retry?.count ?? DEFAULT_RETRY_COUNT;
   const baseBackoff = step.options?.retry?.backoffMs ?? DEFAULT_BACKOFF_MS;
@@ -45,7 +46,7 @@ export async function executeStepWithRetry(
     return executeNavigation(tabId, step);
   }
 
-  return executeDomStep(tabId, step, maxRetries, baseBackoff, signal);
+  return executeDomStep(tabId, step, maxRetries, baseBackoff, signal, llmGenerate);
 }
 
 async function executeNavigation(
@@ -82,6 +83,7 @@ async function executeDomStep(
   maxRetries: number,
   baseBackoff: number,
   signal?: { stopped: () => boolean },
+  llmGenerate?: LlmGenerateFn,
 ): Promise<StepResult> {
   const timeoutMs = step.options?.timeoutMs ?? DEFAULT_DOM_WAIT_TIMEOUT_MS;
 
@@ -91,7 +93,7 @@ async function executeDomStep(
   // failures (e.g. a resolver mode that isn't implemented yet) are a step
   // failure, not a crash — the run loop expects a StepResult, never a throw.
   try {
-    step = resolveStepValues(step);
+    step = await resolveStepValues(step, llmGenerate);
   } catch (err) {
     return {
       stepId: step.id,

@@ -107,7 +107,7 @@ describe('executeStepWithRetry', () => {
     expect(result.attempts).toBe(2);
   });
 
-  it('fails gracefully when a resolver mode is not implemented', async () => {
+  it('fails gracefully when no AI provider is configured', async () => {
     const sendMessage = vi.spyOn(browser.tabs, 'sendMessage');
     const step = makeStep({
       action: 'fill',
@@ -116,7 +116,7 @@ describe('executeStepWithRetry', () => {
 
     const result = await executeStepWithRetry(TAB_ID, step);
     expect(result.passed).toBe(false);
-    expect(result.error).toContain('not supported yet');
+    expect(result.error).toContain('AI provider');
     expect(sendMessage).not.toHaveBeenCalled();
   });
 

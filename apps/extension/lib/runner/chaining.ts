@@ -1,5 +1,6 @@
 import type { Assertion, Scenario, SetupRef, Step } from '@aitomate/schema';
 import { executeStepWithRetry } from './step-executor';
+import type { LlmGenerateFn } from './value-resolver';
 
 /**
  * Scenario chaining (FR-10, T2.8): a main scenario may declare `setup`,
@@ -54,6 +55,7 @@ export async function runSetup(
   setup: SetupRef,
   findScenario: SetupLookup,
   signal: RunSignal,
+  llmGenerate?: LlmGenerateFn,
 ): Promise<SetupOutcome> {
   const stored = await findScenario(setup.scenarioRef);
   if (!stored) {
@@ -82,7 +84,7 @@ export async function runSetup(
     if (signal.stopped()) break;
 
     const step: Step = setupSc.steps[i];
-    const result = await executeStepWithRetry(tabId, step, signal);
+    const result = await executeStepWithRetry(tabId, step, signal, llmGenerate);
 
     if (!result.passed) {
       return {
