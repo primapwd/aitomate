@@ -6,7 +6,10 @@ import { initialSessionState, type RecorderSessionState } from '@/lib/recorder/s
 import { getUiPrefs, setUiPref, type UiPrefs } from '@/lib/ui-prefs';
 import {
   buildScenarioJson,
+  buildScenarioObject,
   downloadJson,
+  findScenarioByName,
+  upsertScenario,
   type ExportMeta,
 } from '@/lib/import-export';
 import RecordingControls from './build/RecordingControls';
@@ -23,6 +26,9 @@ export default function BuildView() {
   const [scenarioDesc, setScenarioDesc] = useState('');
   const [scenarioBaseUrl, setScenarioBaseUrl] = useState('');
   const [scenarioTags, setScenarioTags] = useState('');
+  const [saveStatus, setSaveStatus] = useState<null | 'saving' | 'saved' | 'duplicate' | 'error'>(
+    null,
+  );
   const mounted = useRef(true);
 
   // Load UI prefs + current tab on mount
@@ -171,6 +177,49 @@ export default function BuildView() {
     downloadJson(json, name);
   }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioTags]);
 
+  const handleSave = useCallback(async () => {
+    if (steps.length === 0) return;
+    const name = scenarioName.trim() || 'Untitled Scenario';
+    // upsertScenario matches by name and silently overwrites — an unnamed
+    // save collides with any prior unnamed save under the same default name.
+    // Confirm before clobbering an existing library entry (fail loud, fail
+    // clear: a green "Saved" checkmark must never hide a destroyed scenario).
+    const existing = await findScenarioByName(name);
+    if (existing) {
+      const overwrite = window.confirm(
+        `A scenario named "${name}" already exists in the library. Overwrite it?`,
+      );
+      if (!overwrite) {
+        setSaveStatus('duplicate');
+        setTimeout(() => {
+          setSaveStatus((s) => (s === 'duplicate' ? null : s));
+        }, 3000);
+        return;
+      }
+    }
+
+    setSaveStatus('saving');
+    const meta: ExportMeta = {
+      name,
+      description: scenarioDesc.trim() || undefined,
+      baseUrl: scenarioBaseUrl.trim() || undefined,
+      tags: scenarioTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+    };
+    try {
+      const scenario = buildScenarioObject(steps, meta);
+      await upsertScenario(scenario);
+      setSaveStatus('saved');
+      setTimeout(() => {
+        setSaveStatus((s) => (s === 'saved' ? null : s));
+      }, 3000);
+    } catch {
+      setSaveStatus('error');
+    }
+  }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioTags]);
+
   if (!tabId) {
     return (
       <section>
@@ -246,11 +295,36 @@ export default function BuildView() {
                 placeholder="Tags (comma-separated, optional)"
                 style={exportInput}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  onClick={handleSave}
+                  disabled={saveStatus === 'saving'}
+                  style={{
+                    ...exportBtn,
+                    background: saveStatus === 'saved' ? '#2e7d32' : '#1a1a1a',
+                    opacity: saveStatus === 'saving' ? 0.6 : 1,
+                  }}
+                >
+                  {saveStatus === 'saving'
+                    ? 'Saving…'
+                    : saveStatus === 'saved'
+                      ? 'Saved ✓'
+                      : 'Save to library'}
+                </button>
                 <button onClick={handleExport} style={exportBtn}>
                   Export as .aitomate.json
                 </button>
               </div>
+              {saveStatus === 'error' && (
+                <p style={{ fontSize: 11, color: '#d32f2f', margin: '4px 0 0' }}>
+                  Failed to save. Try again.
+                </p>
+              )}
+              {saveStatus === 'duplicate' && (
+                <p style={{ fontSize: 11, color: '#999', margin: '4px 0 0' }}>
+                  Not saved — a scenario with that name already exists.
+                </p>
+              )}
             </div>
           </details>
           <div style={{ fontSize: 11, color: '#aaa', marginTop: 6, textAlign: 'center' }}>

@@ -58,6 +58,25 @@ export async function saveScenario(scenario: Scenario): Promise<StoredScenario> 
   return entry;
 }
 
+export async function upsertScenario(scenario: Scenario): Promise<StoredScenario> {
+  const all = await listScenarios();
+  const idx = all.findIndex((s) => s.name === scenario.meta.name);
+  if (idx !== -1) {
+    all[idx] = { ...all[idx], scenario, importedAt: Date.now() };
+    await browser.storage.local.set({ [SCENARIOS_KEY]: all });
+    return all[idx];
+  }
+  const entry: StoredScenario = {
+    id: crypto.randomUUID(),
+    name: scenario.meta.name,
+    scenario,
+    importedAt: Date.now(),
+  };
+  all.push(entry);
+  await browser.storage.local.set({ [SCENARIOS_KEY]: all });
+  return entry;
+}
+
 export async function deleteScenario(id: string): Promise<void> {
   const all = await listScenarios();
   await browser.storage.local.set({
@@ -67,12 +86,12 @@ export async function deleteScenario(id: string): Promise<void> {
 
 // ── Export: single scenario ──
 
-export function buildScenarioJson(
+export function buildScenarioObject(
   steps: Step[],
   meta?: ExportMeta,
-): string {
+): Scenario {
   const tags = structuredClone(meta?.tags)?.filter(Boolean) as string[] | undefined;
-  const scenario: Scenario = {
+  return {
     schemaVersion: SCHEMA_VERSION,
     meta: {
       name: meta?.name || 'Untitled Scenario',
@@ -83,7 +102,13 @@ export function buildScenarioJson(
     dataSources: [],
     steps,
   };
-  return JSON.stringify(scenario, null, 2);
+}
+
+export function buildScenarioJson(
+  steps: Step[],
+  meta?: ExportMeta,
+): string {
+  return JSON.stringify(buildScenarioObject(steps, meta), null, 2);
 }
 
 export function downloadJson(json: string, filename: string): void {

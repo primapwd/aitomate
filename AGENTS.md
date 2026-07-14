@@ -116,11 +116,21 @@ decision changes; bump its version and changelog.
   `unlock()` once the vault already exists — the two instances derive the
   same key from the same passphrase+salt, so this always succeeds. Minimum
   passphrase length is 8, not 4 — this vault guards API keys).
-- Next: T2.9 (Build view "Save to library" — direct `saveScenario` call,
-  no export-then-import round trip) and T2.10 (Run view "Run suite" —
-  sequential batch execution across stored scenarios). Both close gaps
-  between the shipped UI and spec §3.8/FR-5 found after T3.3 review; see
-  spec changelog 0.3.1. T4.2 (Run view run-report UI) follows after.
+  T2.9 (Build view "Save to library" — `handleSave` in `BuildView.tsx` calls
+  `upsertScenario` (`lib/import-export.ts`), which matches by
+  `scenario.meta.name` and replaces on collision — no export-then-import
+  round trip. A blank scenario name defaults to `"Untitled Scenario"`
+  (`buildScenarioObject`), so two unnamed saves collide by default; the
+  first shipped version overwrote silently with no warning. Fixed by
+  checking `findScenarioByName` before saving and gating the overwrite
+  behind `window.confirm` — a declined confirm shows a distinct
+  "not saved" message instead of the same green "Saved ✓" a real save
+  gets (Constitution: fail loud, fail clear — a success indicator must
+  never mask a destroyed scenario)).
+- Next: T2.10 (Run view "Run suite" — sequential batch execution across
+  stored scenarios). Closes the remaining gap between the shipped UI and
+  spec FR-5 found after T3.3 review; see spec changelog 0.3.1. T4.2 (Run
+  view run-report UI) follows after.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -223,6 +233,12 @@ own diff against this list before calling a task done.
   code (import/export, message builders) gets a test if it lives in `lib/` —
   it's the thing that makes it reviewable without re-deriving the logic by
   eye. Caught in T2.7 (`import-export.ts` initially had zero tests).
+- **A silent overwrite dressed up as a success message.** An upsert-by-name
+  save (or any "create or replace" action) must not show the same success
+  UI for "created new" and "destroyed an existing one" — confirm before the
+  destructive path, or at least say which one happened. Caught in T2.9
+  (`upsertScenario`'s default `"Untitled Scenario"` name meant two unnamed
+  saves silently clobbered each other, both showing "Saved ✓").
 
 ## Tooling Notes
 

@@ -3,12 +3,14 @@ import { fakeBrowser } from 'wxt/testing';
 import type { Step } from '@aitomate/schema';
 import {
   buildScenarioJson,
+  buildScenarioObject,
   buildSuiteZip,
   deleteScenario,
   findScenarioByName,
   importScenario,
   listScenarios,
   saveScenario,
+  upsertScenario,
 } from './import-export';
 
 const steps: Step[] = [
@@ -53,6 +55,47 @@ describe('buildScenarioJson', () => {
       expect(result.scenario.meta.baseUrl).toBe('{{BASE_URL}}');
       expect(result.scenario.meta.tags).toEqual(['smoke', 'regression']);
     }
+  });
+});
+
+describe('buildScenarioObject', () => {
+  it('returns a Scenario object matching buildScenarioJson output', () => {
+    const obj = buildScenarioObject(steps, { name: 'Test', description: 'desc', baseUrl: 'https://example.com', tags: ['smoke'] });
+    const fromJson = importScenario(buildScenarioJson(steps, { name: 'Test', description: 'desc', baseUrl: 'https://example.com', tags: ['smoke'] }));
+    expect(fromJson.ok).toBe(true);
+    if (fromJson.ok) {
+      expect(obj).toEqual(fromJson.scenario);
+    }
+  });
+});
+
+describe('upsertScenario', () => {
+  it('adds a new scenario when no match exists', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'New' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+
+    const entry = await upsertScenario(parsed.scenario);
+    expect(entry.name).toBe('New');
+
+    const all = await listScenarios();
+    expect(all).toHaveLength(1);
+  });
+
+  it('replaces an existing scenario with the same name', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Dupe' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+    await upsertScenario(parsed.scenario);
+
+    const steps2: Step[] = [{ id: 's2', action: 'navigate', url: '/other' }];
+    const parsed2 = importScenario(buildScenarioJson(steps2, { name: 'Dupe' }));
+    if (!parsed2.ok) throw new Error('fixture failed');
+
+    const updated = await upsertScenario(parsed2.scenario);
+    const all = await listScenarios();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe(updated.id);
+    expect(all[0].scenario.steps).toHaveLength(1);
+    expect(all[0].scenario.steps[0].action).toBe('navigate');
   });
 });
 
