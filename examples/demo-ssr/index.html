@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Aitomate Demo — Sign Up</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
+    input[type="text"], input[type="email"], select, textarea {
+      width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+    }
+    .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .row label { margin: 0; font-weight: 400; }
+    button { margin-top: 20px; padding: 10px 18px; font-size: 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    ul#feature-list { font-size: 13px; color: #444; }
+    #advanced-panel { display: none; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px; }
+    #advanced-panel.visible { display: block; }
+  </style>
+</head>
+<body>
+  <h1>Create your account</h1>
+  <p style="font-size: 13px; color: #666;">
+    Aitomate acceptance-test fixture — record/replay against this form.
+  </p>
+
+  <form action="success.html" method="get">
+    <!-- Auto-excluded from recording (FR-1: hidden CSRF fields are noise) -->
+    <input type="hidden" name="_csrf" value="demo-static-token-do-not-use" />
+
+    <label for="full-name">Full name</label>
+    <input type="text" id="full-name" name="full_name" data-testid="full-name-input" />
+
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" data-testid="email-input" />
+
+    <label for="role">Role</label>
+    <select id="role" name="role" data-testid="role-select">
+      <option value="">Select a role…</option>
+      <option value="developer">Developer</option>
+      <option value="qa">QA Engineer</option>
+      <option value="po">Product Owner</option>
+    </select>
+
+    <label>Plan</label>
+    <div class="row">
+      <input type="radio" id="plan-basic" name="plan" value="basic" data-testid="plan-basic" checked />
+      <label for="plan-basic">Basic</label>
+    </div>
+    <div class="row">
+      <input type="radio" id="plan-pro" name="plan" value="pro" data-testid="plan-pro" />
+      <label for="plan-pro">Pro</label>
+    </div>
+
+    <div class="row">
+      <input type="checkbox" id="show-advanced" data-testid="show-advanced-checkbox" onchange="document.getElementById('advanced-panel').classList.toggle('visible', this.checked); document.getElementById('advanced-toggle-btn').disabled = !this.checked;" />
+      <label for="show-advanced">Show advanced options</label>
+    </div>
+
+    <div id="advanced-panel" data-testid="advanced-panel">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3" data-testid="notes-textarea"></textarea>
+
+      <label for="avatar">Avatar</label>
+      <input type="file" id="avatar" name="avatar" data-testid="avatar-upload" />
+    </div>
+
+    <button type="button" id="advanced-toggle-btn" data-testid="advanced-toggle-btn" disabled>
+      Preview advanced options
+    </button>
+
+    <div class="row" style="margin-top: 20px;">
+      <input type="checkbox" id="subscribe" name="subscribe" data-testid="subscribe-checkbox" />
+      <label for="subscribe">Subscribe to product updates</label>
+    </div>
+
+    <button type="submit" data-testid="submit-button">Create Account</button>
+  </form>
+
+  <h2 style="font-size: 15px; margin-top: 32px;">Features</h2>
+  <ul id="feature-list">
+    <li data-testid="feature-item">Recorder captures clicks, fills, waits</li>
+    <li data-testid="feature-item">Static, dynamic, and AI value resolvers</li>
+    <li data-testid="feature-item">Nine built-in assertions</li>
+  </ul>
+
+  <p>
+    <a href="https://example.com" target="_blank" data-testid="external-link">External docs (opens new tab)</a>
+  </p>
+</body>
+</html>

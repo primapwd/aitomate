@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Aitomate Demo — Account Created</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; color: #222; }
+    #success-banner { padding: 12px 16px; background: #e8f5e9; border: 1px solid #2e7d32; border-radius: 6px; color: #2e7d32; font-size: 14px; }
+    dl { font-size: 13px; }
+    dt { font-weight: 600; margin-top: 8px; }
+    dd { margin: 2px 0 0; color: #444; }
+    a { display: inline-block; margin-top: 24px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="success-banner" data-testid="success-banner">Account created successfully.</div>
+
+  <dl id="submitted-values"></dl>
+
+  <a href="index.html" data-testid="back-link">Back to form</a>
+
+  <script>
+    // Echo submitted (non-secret) query params for inputValue/textContains-
+    // style assertions against the previous page's fills.
+    const params = new URLSearchParams(window.location.search);
+    const dl = document.getElementById('submitted-values');
+    for (const [key, value] of params.entries()) {
+      if (key === '_csrf') continue;
+      const dt = document.createElement('dt');
+      dt.textContent = key;
+      const dd = document.createElement('dd');
+      dd.setAttribute('data-testid', `submitted-${key}`);
+      dd.textContent = value || '(empty)';
+      dl.append(dt, dd);
+    }
+  </script>
+</body>
+</html>
