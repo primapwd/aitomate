@@ -6,6 +6,7 @@ import {
   buildScenarioObject,
   buildSuiteZip,
   deleteScenario,
+  findIncompleteStep,
   findScenarioByName,
   importScenario,
   listScenarios,
@@ -199,5 +200,51 @@ describe('scenario storage', () => {
 
     await deleteScenario(entry.id);
     expect(await listScenarios()).toHaveLength(0);
+  });
+});
+
+describe('findIncompleteStep', () => {
+  it('returns null when every step is filled in', () => {
+    expect(findIncompleteStep(steps)).toBeNull();
+  });
+
+  it('flags a click step with a blank selector value', () => {
+    const result = findIncompleteStep([
+      { id: 's1', action: 'click', selector: { strategy: 'css', value: '' } },
+    ]);
+    expect(result).not.toBeNull();
+    expect(result?.index).toBe(0);
+    expect(result?.message).toContain('selector');
+  });
+
+  it('flags a navigate step with a blank url', () => {
+    const result = findIncompleteStep([{ id: 's1', action: 'navigate', url: '' }]);
+    expect(result?.message).toContain('URL');
+  });
+
+  it('flags a urlMatches assert step with a blank pattern', () => {
+    const result = findIncompleteStep([
+      { id: 's1', action: 'assert', assertion: 'urlMatches', pattern: '', patternType: 'glob' },
+    ]);
+    expect(result?.message).toContain('pattern');
+  });
+
+  it('flags a wait step with a blank forSelector value', () => {
+    const result = findIncompleteStep([
+      { id: 's1', action: 'wait', forSelector: { strategy: 'css', value: '' } },
+    ]);
+    expect(result?.message).toContain('wait for');
+  });
+
+  it('does not flag a wait step with only a duration', () => {
+    expect(findIncompleteStep([{ id: 's1', action: 'wait', durationMs: 1000 }])).toBeNull();
+  });
+
+  it('returns the first incomplete step when several are incomplete', () => {
+    const result = findIncompleteStep([
+      { id: 's1', action: 'navigate', url: '' },
+      { id: 's2', action: 'click', selector: { strategy: 'css', value: '' } },
+    ]);
+    expect(result?.index).toBe(0);
   });
 });

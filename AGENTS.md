@@ -4,7 +4,7 @@ Browser extension for collaborative, AI-assisted test automation. Works on any
 web app (server-rendered or SPA); Laravel apps are the reference targets, not a
 dependency.
 
-**Source of truth: `aitomate-spec-kit.md` (v0.3.0).** If anything here or in a
+**Source of truth: `aitomate-spec-kit.md` (v0.3.2).** If anything here or in a
 conversation contradicts the spec, the spec wins. Update the spec when a design
 decision changes; bump its version and changelog.
 
@@ -147,8 +147,32 @@ decision changes; bump its version and changelog.
   without the guard the first one resets `runTabId` to `null`, so the
   final `suite-state` message (matched by `tabId === runTabId`) never
   arrives and the UI is stuck on "Running…" forever).
+  T2.11 (Build view "Add step manually" — `lib/build/manual-step.ts`'s
+  `buildManualStep(action, id)` builds a blank step of a given type; pure
+  and unit-tested, id is passed in rather than generated inside so the
+  function needs no `crypto` stubbing to test. The first junior draft
+  generated ids from a module-level counter in `StepList.tsx` — that
+  resets to 0 every time the popup unmounts (i.e. every time it's closed),
+  so a second popup session could mint the same id as an already-persisted
+  step, corrupting stepId-keyed matching in the runner. Fixed by generating
+  with `crypto.randomUUID()` in `BuildView.tsx`'s `addStep`, at the call
+  site, not inside the pure builder. The "+ Add step" row is Advanced-mode
+  only (`StepList.tsx`) — a step needing a selector/URL/pattern is
+  unfixable in Simple mode (only Fill's static value is Simple-editable
+  per T2.6), so offering "add" there would create an uncompletable step.
+  Blank fields fail schema validation (`selector.value`/`navigate.url`/
+  `urlMatches.pattern` are all `min(1)`) but `buildScenarioObject` never
+  validated before this — `handleSave`/`handleExport` now call
+  `findIncompleteStep` (`lib/import-export.ts`) first and block with a
+  plain-language "Step N (action) is missing …" message instead of saving/
+  exporting a scenario that will only fail later, silently, on re-import or
+  at runtime).
 - Next: T4.2 (Run view run-report UI, richer than the suite pass/fail list
-  T2.10 shipped) and T2.11+ per spec §4 milestone breakdown.
+  T2.10 shipped), T2.12 (Build view "Locate on page" — highlight/scroll to
+  a step's element in the live tab), T2.13 (wire the still-dead
+  `buildNavigateStep` into the content-script capture path so recorded
+  navigation actually produces a `navigate` step), and remaining spec §4
+  milestone items.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -266,6 +290,30 @@ own diff against this list before calling a task done.
   to start returning an outcome so it *can* be reused. Caught in T2.10 (the
   first suite-runner draft duplicated all of `runSequence`'s step loop
   inside the `play-suite` handler).
+- **A new UI capability offered in a mode that can't complete it.** Before
+  adding a button/action, check both Simple and Advanced editors actually
+  support finishing what it starts — don't gate the *entry point* without
+  checking the *edit path* matches. Caught in T2.11 (a Simple-mode "add
+  step" button created steps with an empty selector, but Simple mode only
+  lets you edit a Fill step's static value — no way to ever fill in that
+  selector without switching modes first).
+- **Save/export writes data without validating it against the schema
+  first.** `buildScenarioObject`/`saveScenario`-style writes are not the
+  same as `safeParseScenario`-style imports — only import was ever
+  validated. A caller-generated object (manual step, template, etc.) can
+  violate a `min(1)` constraint and get written/exported silently, failing
+  only later on re-import or at runtime with a confusing error. Caught in
+  T2.11 — fixed with `findIncompleteStep`, checked before save/export, not
+  by relying on the schema to reject it downstream.
+- **Client-generated ids from in-memory/module state instead of a durable
+  or authoritative source.** A module-level counter (or any counter that
+  lives only in the current JS realm) resets whenever that realm reloads —
+  for a popup, that's every time the user closes and reopens it. If the
+  list it's numbering persists across reloads (e.g. `storage.session`), the
+  reset counter can mint an id that collides with one already saved. Prefer
+  `crypto.randomUUID()`, or route through whatever component already owns
+  authoritative id assignment (here, background's `nextStepId`). Caught in
+  T2.11 (`step-manual-N` counter in `StepList.tsx`).
 
 ## Tooling Notes
 

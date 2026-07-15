@@ -111,6 +111,48 @@ export function buildScenarioJson(
   return JSON.stringify(buildScenarioObject(steps, meta), null, 2);
 }
 
+export interface IncompleteStepInfo {
+  index: number;
+  message: string;
+}
+
+/**
+ * Finds the first step still missing a required field (T2.11: manually-added
+ * steps start blank — a selector value, navigate URL, or urlMatches pattern
+ * left empty fails schema validation with `min(1)`). Save/export must check
+ * this *before* writing, not rely on the schema to reject it silently later
+ * (Constitution: fail loud, fail clear — a saved/exported scenario must
+ * actually be runnable).
+ */
+export function findIncompleteStep(steps: Step[]): IncompleteStepInfo | null {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if ('selector' in step && step.selector && step.selector.value.trim() === '') {
+      return {
+        index: i,
+        message: `Step ${i + 1} (${step.action}) is missing a selector — open it and fill in what element it targets.`,
+      };
+    }
+    if (step.action === 'navigate' && step.url.trim() === '') {
+      return { index: i, message: `Step ${i + 1} (navigate) is missing a URL.` };
+    }
+    if (step.action === 'wait' && step.forSelector && step.forSelector.value.trim() === '') {
+      return {
+        index: i,
+        message: `Step ${i + 1} (wait) is missing the element to wait for.`,
+      };
+    }
+    if (
+      step.action === 'assert' &&
+      step.assertion === 'urlMatches' &&
+      step.pattern.trim() === ''
+    ) {
+      return { index: i, message: `Step ${i + 1} (assert) is missing a URL pattern.` };
+    }
+  }
+  return null;
+}
+
 export function downloadJson(json: string, filename: string): void {
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

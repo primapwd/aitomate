@@ -8,10 +8,12 @@ import {
   buildScenarioJson,
   buildScenarioObject,
   downloadJson,
+  findIncompleteStep,
   findScenarioByName,
   upsertScenario,
   type ExportMeta,
 } from '@/lib/import-export';
+import { buildManualStep, type ManualStepAction } from '@/lib/build/manual-step';
 import RecordingControls from './build/RecordingControls';
 import StepList from './build/StepList';
 
@@ -29,6 +31,7 @@ export default function BuildView() {
   const [saveStatus, setSaveStatus] = useState<null | 'saving' | 'saved' | 'duplicate' | 'error'>(
     null,
   );
+  const [incompleteError, setIncompleteError] = useState('');
   const mounted = useRef(true);
 
   // Load UI prefs + current tab on mount
@@ -156,6 +159,21 @@ export default function BuildView() {
     [tabId, steps],
   );
 
+  const addStep = useCallback(
+    (action: ManualStepAction) => {
+      if (!tabId) return;
+      const step = buildManualStep(action, crypto.randomUUID());
+      const next = [...steps, step];
+      setSteps(next);
+      void browser.runtime.sendMessage({
+        type: 'aitomate:recorder:set-steps',
+        tabId,
+        steps: next,
+      } as RecorderCommand);
+    },
+    [tabId, steps],
+  );
+
   const selectMode = (next: BuildMode) => {
     setMode(next);
     void setUiPref('buildMode', next);
@@ -163,6 +181,12 @@ export default function BuildView() {
 
   const handleExport = useCallback(() => {
     if (steps.length === 0) return;
+    const incomplete = findIncompleteStep(steps);
+    if (incomplete) {
+      setIncompleteError(incomplete.message);
+      return;
+    }
+    setIncompleteError('');
     const meta: ExportMeta = {
       name: scenarioName.trim() || undefined,
       description: scenarioDesc.trim() || undefined,
@@ -179,6 +203,12 @@ export default function BuildView() {
 
   const handleSave = useCallback(async () => {
     if (steps.length === 0) return;
+    const incomplete = findIncompleteStep(steps);
+    if (incomplete) {
+      setIncompleteError(incomplete.message);
+      return;
+    }
+    setIncompleteError('');
     const name = scenarioName.trim() || 'Untitled Scenario';
     // upsertScenario matches by name and silently overwrites — an unnamed
     // save collides with any prior unnamed save under the same default name.
@@ -264,6 +294,7 @@ export default function BuildView() {
         onUpdate={updateStep}
         onDelete={deleteStep}
         onMove={moveStep}
+        onAdd={addStep}
       />
 
       {steps.length > 0 && (
@@ -323,6 +354,11 @@ export default function BuildView() {
               {saveStatus === 'duplicate' && (
                 <p style={{ fontSize: 11, color: '#999', margin: '4px 0 0' }}>
                   Not saved — a scenario with that name already exists.
+                </p>
+              )}
+              {incompleteError && (
+                <p style={{ fontSize: 11, color: '#d32f2f', margin: '4px 0 0' }}>
+                  {incompleteError}
                 </p>
               )}
             </div>
