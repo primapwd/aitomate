@@ -1,5 +1,6 @@
 import type { Step } from '@aitomate/schema';
 import { MANUAL_STEP_ACTIONS, type ManualStepAction } from '@/lib/build/manual-step';
+import { stepSelector } from '@/lib/runner/dom';
 import StepCard from './StepCard';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   onDelete: (index: number) => void;
   onMove: (from: number, to: number) => void;
   onAdd: (action: ManualStepAction) => void;
+  onLocate?: (index: number) => void;
 }
 
 const ACTION_LABELS: Record<ManualStepAction, string> = {
@@ -19,7 +21,7 @@ const ACTION_LABELS: Record<ManualStepAction, string> = {
   assert: 'Assert',
 };
 
-export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, onAdd }: Props) {
+export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, onAdd, onLocate }: Props) {
   return (
     <div>
       {steps.length === 0 && (
@@ -38,6 +40,7 @@ export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, 
           onUpdate={(patch) => onUpdate(i, patch)}
           onMoveUp={i > 0 ? () => onMove(i, i - 1) : null}
           onMoveDown={i < steps.length - 1 ? () => onMove(i, i + 1) : null}
+          onLocate={onLocate && stepSelector(step) ? () => onLocate(i) : undefined}
         />
       ))}
 

@@ -9,10 +9,11 @@ interface Props {
   onUpdate: (patch: Partial<Step>) => void;
   onMoveUp: (() => void) | null;
   onMoveDown: (() => void) | null;
+  onLocate?: () => void;
 }
 
 export default function StepCard(props: Props) {
-  const { step, index, advanced, onDelete, onUpdate, onMoveUp, onMoveDown } = props;
+  const { step, index, advanced, onDelete, onUpdate, onMoveUp, onMoveDown, onLocate } = props;
   const description = describeStep(step, advanced ?? false);
 
   return (
@@ -31,6 +32,7 @@ export default function StepCard(props: Props) {
         <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
           {onMoveUp && <MiniBtn onClick={onMoveUp} label="Move up" symbol="↑" />}
           {onMoveDown && <MiniBtn onClick={onMoveDown} label="Move down" symbol="↓" />}
+          {onLocate && <MiniBtn onClick={onLocate} label="Locate on page" symbol="👁" />}
           <MiniBtn onClick={onDelete} label="Delete step" symbol="✕" danger />
         </div>
       </div>

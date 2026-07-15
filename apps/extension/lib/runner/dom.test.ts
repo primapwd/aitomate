@@ -9,6 +9,7 @@ import {
   sameFramePath,
   setNativeChecked,
   setNativeValue,
+  stepSelector,
   waitForAssertion,
 } from './dom';
 
@@ -208,5 +209,42 @@ describe('sameFramePath', () => {
     expect(sameFramePath(['#frame-a'], ['#frame-b'])).toBe(false);
     expect(sameFramePath(['#frame-a'], undefined)).toBe(false);
     expect(sameFramePath(['#a', '#b'], ['#a'])).toBe(false);
+  });
+});
+
+describe('stepSelector', () => {
+  const sel = { strategy: 'css', value: '#x' } as const;
+
+  it('returns the selector for click/fill/upload/keypress', () => {
+    expect(stepSelector({ id: '1', action: 'click', selector: sel })).toBe(sel);
+    expect(
+      stepSelector({ id: '1', action: 'fill', selector: sel, resolver: { type: 'static', value: 'v' } }),
+    ).toBe(sel);
+    expect(stepSelector({ id: '1', action: 'upload', selector: sel, fixtureRef: 'f.txt' })).toBe(sel);
+    expect(stepSelector({ id: '1', action: 'keypress', key: 'Enter', selector: sel })).toBe(sel);
+  });
+
+  it('returns forSelector for wait steps', () => {
+    expect(stepSelector({ id: '1', action: 'wait', forSelector: sel })).toBe(sel);
+    expect(stepSelector({ id: '1', action: 'wait', durationMs: 1000 })).toBeUndefined();
+  });
+
+  it('returns the selector for selector-based assertions, undefined otherwise', () => {
+    expect(
+      stepSelector({ id: '1', action: 'assert', assertion: 'elementVisible', selector: sel }),
+    ).toBe(sel);
+    expect(
+      stepSelector({
+        id: '1',
+        action: 'assert',
+        assertion: 'urlMatches',
+        pattern: '**/done',
+        patternType: 'glob',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined for navigate steps', () => {
+    expect(stepSelector({ id: '1', action: 'navigate', url: '/x' })).toBeUndefined();
   });
 });

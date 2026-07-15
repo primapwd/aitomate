@@ -14,6 +14,8 @@ import {
   type ExportMeta,
 } from '@/lib/import-export';
 import { buildManualStep, type ManualStepAction } from '@/lib/build/manual-step';
+import { stepSelector } from '@/lib/runner/dom';
+import type { RunnerContentCommand, RunnerContentEvent } from '@/lib/runner/messages';
 import RecordingControls from './build/RecordingControls';
 import StepList from './build/StepList';
 
@@ -32,6 +34,7 @@ export default function BuildView() {
     null,
   );
   const [incompleteError, setIncompleteError] = useState('');
+  const [locateError, setLocateError] = useState('');
   const mounted = useRef(true);
 
   // Load UI prefs + current tab on mount
@@ -174,6 +177,33 @@ export default function BuildView() {
     [tabId, steps],
   );
 
+  const handleLocate = useCallback(
+    async (index: number) => {
+      const step = steps[index];
+      if (!step) return;
+      const sel = stepSelector(step);
+      if (!sel) return;
+      setLocateError('');
+      try {
+        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) {
+          setLocateError('No active tab found. Open the page first.');
+          return;
+        }
+        const response = (await browser.tabs.sendMessage(tab.id, {
+          type: 'aitomate:runner:locate-element',
+          selector: sel,
+        } satisfies RunnerContentCommand)) as RunnerContentEvent | undefined;
+        if (response?.type === 'aitomate:runner:element-located' && !response.found) {
+          setLocateError(response.error ?? 'Element not found on this page.');
+        }
+      } catch {
+        setLocateError('Could not reach the page — open/reload it and try again.');
+      }
+    },
+    [steps],
+  );
+
   const selectMode = (next: BuildMode) => {
     setMode(next);
     void setUiPref('buildMode', next);
@@ -295,7 +325,14 @@ export default function BuildView() {
         onDelete={deleteStep}
         onMove={moveStep}
         onAdd={addStep}
+        onLocate={handleLocate}
       />
+
+      {locateError && (
+        <p style={{ fontSize: 11, color: '#d32f2f', margin: '6px 0 0', textAlign: 'center' }}>
+          {locateError}
+        </p>
+      )}
 
       {steps.length > 0 && (
         <>

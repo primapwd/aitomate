@@ -24,6 +24,7 @@ import {
   selectorDescription,
   setNativeChecked,
   setNativeValue,
+  stepSelector,
   waitForAssertion,
   waitForElement,
 } from '@/lib/runner/dom';
@@ -122,7 +123,7 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener(
       (message: RecorderStateMessage | RunnerContentCommand):
         | void
-        | Promise<RunnerContentEvent> => {
+        | Promise<RunnerContentEvent | { found: boolean; error?: string }> => {
         // Recorder state broadcast (background → content) — fire-and-forget.
         if (message.type === 'aitomate:recorder:state') {
           recorderState = message.state;
@@ -143,6 +144,9 @@ export default defineContentScript({
             return waitForDomStability(message.timeoutMs).then(() => ({
               type: 'aitomate:runner:dom-stable' as const,
             }));
+          case 'aitomate:runner:locate-element':
+            if (!sameFramePath(message.selector.framePath, framePath)) return;
+            return handleLocateElement(message.selector);
           default:
             return;
         }
@@ -591,27 +595,51 @@ async function waitForDomStability(timeoutMs = 30_000): Promise<void> {
   });
 }
 
+// ── Locate element (T2.12) ──────────────────
+
+const LOCATE_FLASH_STYLE_ID = 'aitomate-locate-flash-keyframes';
+
+/** Injects the flash @keyframes once per document instead of once per click. */
+function ensureFlashKeyframes(): void {
+  if (document.getElementById(LOCATE_FLASH_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = LOCATE_FLASH_STYLE_ID;
+  style.textContent = `@keyframes aitomate-flash { 0%,100% { outline-color:#ffc10700 } 50% { outline-color:#ffc107 } }`;
+  document.head.appendChild(style);
+}
+
+async function handleLocateElement(selector: Selector): Promise<RunnerContentEvent> {
+  const el = queryElement(selector);
+  if (!el) {
+    return {
+      type: 'aitomate:runner:element-located',
+      found: false,
+      error: `Element not found: ${selectorDescription(selector)}`,
+    };
+  }
+
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  ensureFlashKeyframes();
+
+  const origOutline = (el as HTMLElement).style.outline;
+  const origOutlineOffset = (el as HTMLElement).style.outlineOffset;
+  const origAnimation = (el as HTMLElement).style.animation;
+  (el as HTMLElement).style.outline = '3px solid #ffc107';
+  (el as HTMLElement).style.outlineOffset = '2px';
+  (el as HTMLElement).style.animation = 'aitomate-flash 0.6s ease-in-out 3';
+
+  setTimeout(() => {
+    (el as HTMLElement).style.outline = origOutline;
+    (el as HTMLElement).style.outlineOffset = origOutlineOffset;
+    (el as HTMLElement).style.animation = origAnimation;
+  }, 2000);
+
+  return { type: 'aitomate:runner:element-located', found: true };
+}
+
 // ─────────────────────────────────────────────
 // Local DOM glue (pure lookup helpers live in lib/runner/dom.ts)
 // ─────────────────────────────────────────────
-
-/** The selector a step targets, deciding which frame executes it. */
-function stepSelector(step: Step): Selector | undefined {
-  switch (step.action) {
-    case 'click':
-    case 'fill':
-    case 'upload':
-      return step.selector;
-    case 'keypress':
-      return step.selector;
-    case 'wait':
-      return step.forSelector;
-    case 'assert':
-      return 'selector' in step ? step.selector : undefined;
-    default:
-      return undefined;
-  }
-}
 
 function scrollIntoView(el: Element): void {
   el.scrollIntoView({ block: 'nearest', behavior: 'instant' });

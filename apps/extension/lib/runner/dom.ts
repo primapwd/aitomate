@@ -1,4 +1,4 @@
-import type { Selector } from '@aitomate/schema';
+import type { Selector, Step } from '@aitomate/schema';
 
 /**
  * Pure DOM lookup helpers for playback (T2.2). Kept out of the content
@@ -217,4 +217,26 @@ export function sameFramePath(
   const a = target ?? [];
   const b = own ?? [];
   return a.length === b.length && a.every((seg, i) => seg === b[i]);
+}
+
+/**
+ * The selector a step targets, if any — decides which frame executes it
+ * (T2.2) and which element "Locate on page" (T2.12) highlights. Single
+ * source of truth so a new step variant only needs updating here, not in
+ * every caller that duplicates this switch.
+ */
+export function stepSelector(step: Step): Selector | undefined {
+  switch (step.action) {
+    case 'click':
+    case 'fill':
+    case 'upload':
+    case 'keypress':
+      return step.selector;
+    case 'wait':
+      return step.forSelector;
+    case 'assert':
+      return 'selector' in step ? step.selector : undefined;
+    default:
+      return undefined;
+  }
 }

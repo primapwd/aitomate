@@ -167,12 +167,34 @@ decision changes; bump its version and changelog.
   plain-language "Step N (action) is missing …" message instead of saving/
   exporting a scenario that will only fail later, silently, on re-import or
   at runtime).
+  T2.12 (Build view "Locate on page" — a "👁 Locate" button per step sends
+  `aitomate:runner:locate-element` straight to the content script
+  (`browser.tabs.sendMessage`, bypassing background — there's no run state
+  to track, so no need to route through it), which scrolls the element
+  into view and flashes its outline via `handleLocateElement` in
+  `content.ts`. `stepSelector(step): Selector | undefined` — which step
+  variant carries a selector, and which field — used to live duplicated in
+  two places (`content.ts`'s frame-routing switch, and a sloppy
+  `(step as any).selector || (step as any).forSelector` in `BuildView.tsx`);
+  it's now one exported function in `lib/runner/dom.ts`, unit-tested, and
+  both callers import it. Two real bugs the first junior draft had: (1) the
+  `locate-element` case in `content.ts`'s message switch had no
+  `sameFramePath` guard — `execute-step` and `wait-for-dom` both check it
+  (every frame receives the message under `allFrames: true`; only the
+  addressed frame may respond, per T2.2), but this case answered from every
+  frame, so an iframe-targeted selector could race and report the wrong
+  frame's "not found". (2) `BuildView.tsx` sent the message with the
+  response cast away and never read it — the content script's plain-
+  language "Element not found: …" error had nowhere to go, so a wrong
+  selector produced a silent no-op instead of feedback, defeating the
+  feature's entire purpose. Also: the "Locate" button now only renders when
+  `stepSelector(step)` is non-empty (`StepList.tsx`) — a `navigate` step or
+  a `wait` step with only `durationMs` has nothing to locate, so it no
+  longer shows a button that does nothing when clicked).
 - Next: T4.2 (Run view run-report UI, richer than the suite pass/fail list
-  T2.10 shipped), T2.12 (Build view "Locate on page" — highlight/scroll to
-  a step's element in the live tab), T2.13 (wire the still-dead
-  `buildNavigateStep` into the content-script capture path so recorded
-  navigation actually produces a `navigate` step), and remaining spec §4
-  milestone items.
+  T2.10 shipped), T2.13 (wire the still-dead `buildNavigateStep` into the
+  content-script capture path so recorded navigation actually produces a
+  `navigate` step), and remaining spec §4 milestone items.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -314,6 +336,22 @@ own diff against this list before calling a task done.
   `crypto.randomUUID()`, or route through whatever component already owns
   authoritative id assignment (here, background's `nextStepId`). Caught in
   T2.11 (`step-manual-N` counter in `StepList.tsx`).
+- **A new `all_frames` message case skips the frame guard every other case
+  has.** With `allFrames: true`, every frame in the tab receives a runner
+  command — `execute-step` and `wait-for-dom` both check `sameFramePath`/
+  `framePath` before responding, or the wrong frame can win the
+  `sendMessage` response race. Adding a new content-script message case
+  needs the same check, every time — it's not a one-off fix, it's a
+  standing rule for this file. Caught in T2.12 (`locate-element` answered
+  from every frame unconditionally).
+- **A response the sender never reads.** Sending a message and not awaiting/
+  checking its result is only safe when the callee truly can't fail. If the
+  content script can report `{found: false, error}`, something must surface
+  that error — a `sendMessage` call decorated with `as any` and discarded is
+  a sign the response was designed but the sender forgot to use it. Caught
+  in T2.12 (`BuildView.tsx`'s "Locate" button ignored the found/error
+  response entirely, so a bad selector produced a silent no-op instead of
+  the plain-language error the content script had already built).
 
 ## Tooling Notes
 

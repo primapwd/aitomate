@@ -1,4 +1,4 @@
-import type { Scenario, Step } from '@aitomate/schema';
+import type { Scenario, Selector, Step } from '@aitomate/schema';
 import type { RunnerSessionState } from './runner-session';
 import type { SuiteReport, SuiteScenarioRef } from './suite';
 
@@ -25,12 +25,14 @@ export type RunnerCommand =
 /** Background → content script. Runs in the target tab. */
 export type RunnerContentCommand =
   | { type: 'aitomate:runner:execute-step'; step: Step }
-  | { type: 'aitomate:runner:wait-for-dom'; timeoutMs?: number };
+  | { type: 'aitomate:runner:wait-for-dom'; timeoutMs?: number }
+  | { type: 'aitomate:runner:locate-element'; selector: Selector };
 
 /** Content script → background. `sender.tab.id` identifies the tab. */
 export type RunnerContentEvent =
   | { type: 'aitomate:runner:step-executed'; stepId: string; passed: boolean; error?: string }
-  | { type: 'aitomate:runner:dom-stable' };
+  | { type: 'aitomate:runner:dom-stable' }
+  | { type: 'aitomate:runner:element-located'; found: boolean; error?: string };
 
 /**
  * Background → UI (popup/sidepanel), broadcast on every state change.
