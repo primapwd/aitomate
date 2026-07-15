@@ -6,6 +6,7 @@ import type {
   Selector,
   UploadStep,
 } from '@aitomate/schema';
+import { reduceSession, type RecorderSessionState } from './session';
 
 /** Pure Step builders — the recorder assigns `id` when it appends to the log. */
 export type RecordedStep =
@@ -85,4 +86,34 @@ export function valueOfControl(el: Element): string | boolean {
     return el.value;
   }
   return '';
+}
+
+export interface CaptureNavigationResult {
+  session: RecorderSessionState;
+  step: Omit<NavigateStep, 'id'> | null;
+}
+
+/**
+ * T2.13: Pure function combining `reduceSession` + `buildNavigateStep` —
+ * replaces the inline session-reduce + step-push logic that currently lives
+ * in `entrypoints/background.ts`.
+ *
+ * Returns the new session state and (if a navigate step should be recorded)
+ * a step object. The caller appends the step with a generated id:
+ *
+ *   const { session, step } = captureNavigation(recording.session, details.url);
+ *   recording.session = session;
+ *   if (step) recording.steps.push({ id: nextStepId(recording), ...step });
+ */
+export function captureNavigation(
+  state: RecorderSessionState,
+  url: string,
+): CaptureNavigationResult {
+  const next: RecorderSessionState = reduceSession(state, { type: 'NAVIGATE', url });
+
+  if (state.status === 'recording' && next.status === 'recording' && url !== state.originUrl) {
+    return { session: next, step: buildNavigateStep(url) };
+  }
+
+  return { session: next, step: null };
 }

@@ -6,6 +6,7 @@ import type {
   RecorderStateMessage,
   RecorderStepsResponse,
 } from '@/lib/recorder/messages';
+import { captureNavigation } from '@/lib/recorder/capture';
 import { reduceSession, type RecorderSessionState } from '@/lib/recorder/session';
 import {
   clearRecording,
@@ -545,18 +546,10 @@ export default defineBackground(() => {
     const recording = await getRecording(details.tabId);
     if (recording.session.status !== 'recording') return;
 
-    const previousUrl = recording.session.originUrl;
-    recording.session = reduceSession(recording.session, {
-      type: 'NAVIGATE',
-      url: details.url,
-    });
-
-    if (recording.session.status === 'recording' && previousUrl !== details.url) {
-      recording.steps.push({
-        id: nextStepId(recording),
-        action: 'navigate',
-        url: details.url,
-      });
+    const { session, step } = captureNavigation(recording.session, details.url);
+    recording.session = session;
+    if (step) {
+      recording.steps.push({ id: nextStepId(recording), ...step });
     }
     await saveRecording(details.tabId, recording);
     if (recording.session.status === 'paused') {

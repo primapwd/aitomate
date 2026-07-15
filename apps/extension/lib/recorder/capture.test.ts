@@ -6,10 +6,12 @@ import {
   buildKeypressStep,
   buildNavigateStep,
   buildUploadStep,
+  captureNavigation,
   isFileInput,
   isValueControl,
   valueOfControl,
 } from './capture';
+import type { RecorderSessionState } from './session';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -113,5 +115,70 @@ describe('valueOfControl', () => {
     expect(valueOfControl(document.querySelector('input')!)).toBe('hi');
     expect(valueOfControl(document.querySelector('textarea')!)).toBe('notes');
     expect(valueOfControl(document.querySelector('select')!)).toBe('a');
+  });
+});
+
+/**
+ * T2.13: `captureNavigation` replaces the inline session-reduce + step-push
+ * logic that currently lives in `entrypoints/background.ts`'s
+ * `webNavigation.onCommitted` handler (a Common-Mistakes violation — decision
+ * logic in an entrypoint instead of `lib/` with a test). It combines
+ * `reduceSession` (session.ts, already tested on its own) with
+ * `buildNavigateStep` (already tested above) and decides whether a step
+ * should be appended, in one pure call background.ts can use as-is:
+ *
+ *   const { session, step } = captureNavigation(recording.session, details.url);
+ *   recording.session = session;
+ *   if (step) recording.steps.push({ id: nextStepId(recording), ...step });
+ */
+describe('captureNavigation', () => {
+  const recording: RecorderSessionState = { status: 'recording', originUrl: 'https://a.test/' };
+  const idle: RecorderSessionState = { status: 'idle' };
+  const paused: RecorderSessionState = {
+    status: 'paused',
+    originUrl: 'https://a.test/',
+    pauseReason: 'origin-change',
+  };
+
+  it('returns no step when not currently recording', () => {
+    const result = captureNavigation(idle, 'https://a.test/next');
+    expect(result.step).toBeNull();
+    expect(result.session).toEqual(idle);
+  });
+
+  it('returns no step when already paused', () => {
+    const result = captureNavigation(paused, 'https://b.test/');
+    expect(result.step).toBeNull();
+    expect(result.session).toEqual(paused);
+  });
+
+  it('appends a navigate step for a same-origin URL change while recording', () => {
+    const result = captureNavigation(recording, 'https://a.test/checkout');
+    expect(result.step).toEqual(buildNavigateStep('https://a.test/checkout'));
+    expect(result.session).toEqual({ status: 'recording', originUrl: 'https://a.test/checkout' });
+  });
+
+  it('returns no step for a no-op navigation to the same URL', () => {
+    const result = captureNavigation(recording, 'https://a.test/');
+    expect(result.step).toBeNull();
+    expect(result.session).toEqual(recording);
+  });
+
+  it('records the return trip in an A -> B -> A same-origin sequence', () => {
+    const toB = captureNavigation(recording, 'https://a.test/b');
+    expect(toB.step).toEqual(buildNavigateStep('https://a.test/b'));
+
+    const backToA = captureNavigation(toB.session, 'https://a.test/');
+    expect(backToA.step).toEqual(buildNavigateStep('https://a.test/'));
+  });
+
+  it('pauses on cross-origin navigation and returns no step for the boundary-crossing nav itself', () => {
+    const result = captureNavigation(recording, 'https://evil.test/');
+    expect(result.step).toBeNull();
+    expect(result.session).toEqual({
+      status: 'paused',
+      originUrl: 'https://a.test/',
+      pauseReason: 'origin-change',
+    });
   });
 });

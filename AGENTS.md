@@ -191,10 +191,17 @@ decision changes; bump its version and changelog.
   `stepSelector(step)` is non-empty (`StepList.tsx`) — a `navigate` step or
   a `wait` step with only `durationMs` has nothing to locate, so it no
   longer shows a button that does nothing when clicked).
+  T2.13 (recorder navigation-step fix — `captureNavigation` in
+  `lib/recorder/capture.ts` combines `reduceSession` + `buildNavigateStep`
+  into one pure, TDD'd function; `background.ts`'s `webNavigation.onCommitted`
+  handler now calls it instead of reducing the session and pushing the step
+  inline. Same recurring pattern as T2.2/T2.3/T2.8: decision logic — push a
+  step or not, based on session status and whether the URL actually changed —
+  belongs in `lib/` with a test, not inline in an entrypoint. `buildNavigateStep`
+  itself wasn't dead per se; `background.ts` was duplicating its shape by hand
+  instead of calling it).
 - Next: T4.2 (Run view run-report UI, richer than the suite pass/fail list
-  T2.10 shipped), T2.13 (wire the still-dead `buildNavigateStep` into the
-  content-script capture path so recorded navigation actually produces a
-  `navigate` step), and remaining spec §4 milestone items.
+  T2.10 shipped), and remaining spec §4 milestone items.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -266,8 +273,8 @@ own diff against this list before calling a task done.
   rule (a guard, a retry policy, a message-shape decision), it belongs in
   `lib/` with a `.test.ts` sibling, even if it needs `fakeBrowser` to test
   (see `step-executor.ts`, `chaining.ts`). Repeated in T2.2 (DOM helpers),
-  T2.3 (value resolution), T2.8 (setup chaining) — each time the fix was the
-  same extraction.
+  T2.3 (value resolution), T2.8 (setup chaining), T2.13 (navigation-step
+  capture) — each time the fix was the same extraction.
 - **Dead or half-finished code left in place.** A cache that's written but
   never read, a comment describing behavior the code doesn't actually do, a
   leftover reasoning note — delete it or wire it up, don't ship it half-done.
