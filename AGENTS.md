@@ -228,8 +228,20 @@ decision changes; bump its version and changelog.
   with a `runTabIdRef` updated synchronously wherever a run starts, used only
   for the run-report match — sidesteps the React re-render timing race
   entirely).
-- Next: T4.3 (export run report as JSON/HTML), and remaining spec §4
-  milestone items.
+  T4.3 (`lib/runner/report-export.ts` — `buildReportJson`/`buildReportHtml`/
+  `buildReportFilename`, TDD'd first; pure string builders, no DOM access
+  (mirrors `import-export.ts`'s `buildScenarioJson`/`buildSuiteZip` split —
+  `downloadReport` is the separate DOM-touching wrapper, same as
+  `downloadJson`). The HTML export is a real XSS surface: a step's `error`
+  can echo page/assertion text and `scenarioName` is user-typed, and this
+  file gets opened directly in a browser or attached to a bug ticket — every
+  such field is escaped (`esc()`) before landing in the HTML string, verified
+  by dedicated tests injecting `<script>`/`<img onerror>` payloads. Only
+  style nit found: `buildReportFilename`'s sanitize regex dropped `-` from
+  the allowed charset, unlike `buildSuiteZip`'s `[^a-zA-Z0-9_-]` — fixed to
+  match).
+- Next: T4.4 (first-run onboarding wizard), T4.5 (Firefox/Edge build
+  verification + polyfill audit), and remaining spec §4 milestone items.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands

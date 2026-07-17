@@ -11,6 +11,7 @@ import {
   type StoredScenario,
 } from '@/lib/import-export';
 import type { RunReport } from '@/lib/runner/report';
+import { downloadReport } from '@/lib/runner/report-export';
 import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
 
@@ -297,6 +298,15 @@ export default function RunView() {
             </div>
           </div>
 
+          <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+            <button onClick={() => downloadReport(runReport, 'json')} style={smallBtnStyle}>
+              Export JSON
+            </button>
+            <button onClick={() => downloadReport(runReport, 'html')} style={smallBtnStyle}>
+              Export HTML
+            </button>
+          </div>
+
           <div style={{ marginTop: 8 }}>
             <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: '#777', cursor: 'pointer' }}>
               <input type="checkbox" checked={reportAdvanced} onChange={(e) => setReportAdvanced(e.target.checked)} />
@@ -347,6 +357,15 @@ const btnStyle: React.CSSProperties = {
   padding: '6px 12px',
   border: '1px solid #ccc',
   borderRadius: 6,
+  background: '#fff',
+  cursor: 'pointer',
+};
+
+const smallBtnStyle: React.CSSProperties = {
+  fontSize: 11,
+  padding: '4px 10px',
+  border: '1px solid #ccc',
+  borderRadius: 4,
   background: '#fff',
   cursor: 'pointer',
 };
