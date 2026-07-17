@@ -240,8 +240,34 @@ decision changes; bump its version and changelog.
   style nit found: `buildReportFilename`'s sanitize regex dropped `-` from
   the allowed charset, unlike `buildSuiteZip`'s `[^a-zA-Z0-9_-]` — fixed to
   match).
-- Next: T4.4 (first-run onboarding wizard), T4.5 (Firefox/Edge build
-  verification + polyfill audit), and remaining spec §4 milestone items.
+  T4.4 (`lib/onboarding.ts`'s `reduceOnboarding` + `scenarioNeedsConfig`,
+  TDD'd first — same reducer shape as `session.ts`/`runner-session.ts`.
+  `scenarioNeedsConfig` is the single gate deciding whether the wizard's
+  config step shows at all: a static/dynamic-array-only scenario skips
+  straight to `complete` (Constitution: zero-setup baseline — no passphrase/
+  connector prompt for a scenario that doesn't need one). `OnboardingWizard`
+  (`components/OnboardingWizard.tsx`) drives the reducer and persists
+  `aitomate:onboarding` to `storage.local` on completion/skip. Two real bugs
+  in the first draft: (1) `RunView.tsx` and the wizard each independently
+  read the same `aitomate:onboarding` storage key to decide visibility —
+  two sources of truth for one flag, prone to drift if either check changes
+  without the other. Fixed by making the wizard own its visibility
+  end-to-end (mount-check + hide-on-complete); `RunView` now always renders
+  it unconditionally. (2) A scenario imported *during* onboarding
+  (`saveScenario`, called from inside the wizard) never appeared in
+  `RunView`'s scenario list until the popup was reopened — the wizard
+  bypasses `RunView`'s own import flow, so nothing triggered a refresh.
+  Fixed by having `onComplete` call `RunView`'s `refresh()`).
+  T4.5 (Firefox/Edge polyfill audit — `lib/cross-browser-audit.test.ts`
+  scans `entrypoints/`, `lib/`, `components/` for direct `chrome.*` usage
+  (Hard Constraint: `browser.*` only), currently green, guards regression.
+  `lib/sidepanel.test.ts` locks in the T1.4 side-panel adapter's Chrome/
+  Firefox fallback — that adapter shipped without a test of its own; this
+  closes the gap. Both are verification/regression tests, not new product
+  logic — the actual Firefox/Edge build + manual load-unpacked check is
+  still a manual step, not something a unit test can cover).
+- Next: remaining spec §4 milestone items (Milestone 2: database/bridge,
+  Milestone 3: plugins & release — see spec §4).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -406,6 +432,15 @@ own diff against this list before calling a task done.
   in T2.12 (`BuildView.tsx`'s "Locate" button ignored the found/error
   response entirely, so a bad selector produced a silent no-op instead of
   the plain-language error the content script had already built).
+- **Two components independently read the same persisted flag to decide
+  the same thing.** If a parent and child both read the same
+  `storage.local`/`storage.session` key to each separately decide
+  visibility/state, that's two sources of truth for one fact — they will
+  drift the first time one side's check changes without the other's. Let
+  the component that owns the behavior (usually the child) own the whole
+  decision — mount check *and* hide-on-complete — and have the parent
+  render it unconditionally. Caught in T4.4 (`RunView.tsx` and
+  `OnboardingWizard.tsx` both read `aitomate:onboarding` independently).
 
 ## Tooling Notes
 

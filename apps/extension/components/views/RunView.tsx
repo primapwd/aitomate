@@ -12,6 +12,7 @@ import {
 } from '@/lib/import-export';
 import type { RunReport } from '@/lib/runner/report';
 import { downloadReport } from '@/lib/runner/report-export';
+import OnboardingWizard from '@/components/OnboardingWizard';
 import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
 
@@ -167,7 +168,16 @@ export default function RunView() {
     downloadBlob(blob, 'aitomate-suite.zip');
   }, [scenarios]);
 
+  // The wizard can save a scenario mid-onboarding (`saveScenario`, bypassing
+  // this view's own import flow) — refresh so it shows up in the list
+  // without waiting for the popup to reopen.
+  const handleOnboardingComplete = useCallback(() => {
+    void refresh();
+  }, [refresh]);
+
   return (
+    <>
+      <OnboardingWizard onComplete={handleOnboardingComplete} />
     <section>
       <p style={{ fontSize: 13, color: '#555', margin: '0 0 12px' }}>
         Import a scenario and run it — no setup needed for static-only
@@ -349,6 +359,7 @@ export default function RunView() {
         </div>
       )}
     </section>
+    </>
   );
 }
 
