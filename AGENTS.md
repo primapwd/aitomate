@@ -200,8 +200,24 @@ decision changes; bump its version and changelog.
   belongs in `lib/` with a test, not inline in an entrypoint. `buildNavigateStep`
   itself wasn't dead per se; `background.ts` was duplicating its shape by hand
   instead of calling it).
-- Next: T4.2 (Run view run-report UI, richer than the suite pass/fail list
-  T2.10 shipped), and remaining spec §4 milestone items.
+  T4.1 (`lib/runner/report.ts`'s `buildRunReport` — pure, TDD'd first: zips a
+  scenario's `Step[]` against the `StepResult[]` `runSequence` already
+  produces, keyed by `stepId` (not index — immune to any future reordering).
+  The runner is fail-fast (`runner-session.ts`'s `STEP_FAIL` -> `'error'`), so
+  `results` can be shorter than `steps`; steps with no matching result are
+  reported `'skipped'`, not dropped, so a PO/QA can see what never ran.
+  `passed` requires every step to have a result AND every result to have
+  passed — an incomplete run (stopped early) counts as not passed even with
+  zero actual failures. `screenshotOnFailure` is dropped unless the report
+  failed. Does not capture anything itself — no `captureVisibleTab`, no
+  console/network listeners — that's background.ts's job when it wires this
+  in; this function only shapes data the caller already collected, same
+  separation as `suite.ts`'s injected `runOne`. First draft typed
+  `RunReportStep.action` as `string` via an `as string` cast instead of
+  `Step['action']`, throwing away the literal union for no reason — fixed).
+- Next: T4.2 (Run view run-report UI + wiring `buildRunReport` into
+  background.ts, richer than the suite pass/fail list T2.10 shipped), and
+  remaining spec §4 milestone items.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
