@@ -215,9 +215,21 @@ decision changes; bump its version and changelog.
   separation as `suite.ts`'s injected `runOne`. First draft typed
   `RunReportStep.action` as `string` via an `as string` cast instead of
   `Step['action']`, throwing away the literal union for no reason — fixed).
-- Next: T4.2 (Run view run-report UI + wiring `buildRunReport` into
-  background.ts, richer than the suite pass/fail list T2.10 shipped), and
-  remaining spec §4 milestone items.
+  T4.2 (Run view run-report UI — `background.ts`'s `runSequence` now calls
+  `buildRunReport` after every single-scenario run and broadcasts it via a
+  new `aitomate:runner:run-report` runtime message; `RunView.tsx` renders a
+  pass/fail summary + per-step list, Advanced toggle reveals stepId/error/
+  attempts/durationMs. Real bug found: `background.ts` broadcasts the final
+  session `state` (done/error — which `RunView` uses to null out `runTabId`)
+  *before* broadcasting the run-report for the same run. If React re-renders
+  (applying that null) before the run-report message arrives, matching it on
+  `runTabId` state drops the report — flaky, timing-dependent, same
+  "state-machine edge case" category as T2.2's stale-control-map bug. Fixed
+  with a `runTabIdRef` updated synchronously wherever a run starts, used only
+  for the run-report match — sidesteps the React re-render timing race
+  entirely).
+- Next: T4.3 (export run report as JSON/HTML), and remaining spec §4
+  milestone items.
 - Task list and milestone breakdown: spec §4.
 
 ## Commands
@@ -315,7 +327,14 @@ own diff against this list before calling a task done.
   concurrently? What if the service worker restarts mid-run (storage.session
   persists, in-memory control maps don't)? What if the input is empty? Each
   of these had a real bug in T2.2 (stale control map, permanent "playing"
-  lock, zero-step scenario stuck).
+  lock, zero-step scenario stuck). Also watch ordering across *two separate*
+  broadcasts for the same event: if one message's handler resets a piece of
+  state (e.g. a tabId used for matching) and a second, related message
+  arrives shortly after, whether the second message still matches depends on
+  React re-render timing, not message order — a race, not a guarantee.
+  Caught in T4.2 (`run-report` broadcast sent after the `state` broadcast
+  that nulls `runTabId`; fixed with a ref updated synchronously instead of
+  relying on the state value).
 - **New `lib/` file shipped without a paired `.test.ts`.** Even glue-ish
   code (import/export, message builders) gets a test if it lives in `lib/` —
   it's the thing that makes it reviewable without re-deriving the logic by

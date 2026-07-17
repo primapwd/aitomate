@@ -1,5 +1,6 @@
 import type { Scenario, Selector, Step } from '@aitomate/schema';
 import type { RunnerSessionState } from './runner-session';
+import type { RunReport } from './report';
 import type { SuiteReport, SuiteScenarioRef } from './suite';
 
 /**
@@ -49,6 +50,13 @@ export type RunnerSuiteStateMessage = {
   type: 'aitomate:runner:suite-state';
   tabId: number;
   suiteReport: SuiteReport;
+};
+
+/** Background → UI, broadcast after a single scenario run completes. */
+export type RunnerRunReportMessage = {
+  type: 'aitomate:runner:run-report';
+  tabId: number;
+  report: RunReport;
 };
 
 export interface StepResult {

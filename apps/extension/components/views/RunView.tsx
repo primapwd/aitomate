@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import {
   buildSuiteZip,
@@ -10,7 +10,8 @@ import {
   saveScenario,
   type StoredScenario,
 } from '@/lib/import-export';
-import type { RunnerCommand, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
+import type { RunReport } from '@/lib/runner/report';
+import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
 
 export default function RunView() {
@@ -20,6 +21,14 @@ export default function RunView() {
   const [runTabId, setRunTabId] = useState<number | null>(null);
   const [suiteRunning, setSuiteRunning] = useState(false);
   const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
+  const [runReport, setRunReport] = useState<RunReport | null>(null);
+  const [reportAdvanced, setReportAdvanced] = useState(false);
+  // background sends the final 'state' (done/error) broadcast, which nulls
+  // runTabId, *before* the run-report broadcast for the same run. If React
+  // re-renders (applying that null) before run-report arrives, matching on
+  // the `runTabId` state below would drop the report. A ref sidesteps the
+  // React re-render race: it's updated synchronously, not on next render.
+  const runTabIdRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     const all = await listScenarios();
@@ -34,7 +43,7 @@ export default function RunView() {
   // without this it stays on "Running…" forever.
   useEffect(() => {
     const handler = (msg: unknown) => {
-      const m = msg as RunnerStateMessage | RunnerSuiteStateMessage;
+      const m = msg as RunnerStateMessage | RunnerRunReportMessage | RunnerSuiteStateMessage;
       // While a suite is running, every scenario inside it broadcasts its own
       // 'done'/'error' state on this same tab — the single-run branch below
       // must ignore those, or it clears runTabId after the *first* scenario
@@ -49,11 +58,15 @@ export default function RunView() {
           }
         }
       }
+      if (m.type === 'aitomate:runner:run-report' && m.tabId === runTabIdRef.current) {
+        setRunReport(m.report);
+      }
       if (m.type === 'aitomate:runner:suite-state' && m.tabId === runTabId) {
         setSuiteReport(m.suiteReport);
         setSuiteRunning(false);
         setRunningId(null);
         setRunTabId(null);
+        setRunReport(null);
       }
     };
     browser.runtime.onMessage.addListener(handler);
@@ -80,6 +93,7 @@ export default function RunView() {
 
   const handleRun = useCallback(
     async (entry: StoredScenario) => {
+      setRunReport(null);
       setImportError('');
       setRunningId(entry.id);
       try {
@@ -90,6 +104,7 @@ export default function RunView() {
           return;
         }
         setRunTabId(tab.id);
+        runTabIdRef.current = tab.id;
         // Fire and forget — the runner loop runs in the background.
         await browser.runtime.sendMessage({
           type: 'aitomate:runner:play',
@@ -125,6 +140,7 @@ export default function RunView() {
         return;
       }
       setRunTabId(tab.id);
+      runTabIdRef.current = tab.id;
       await browser.runtime.sendMessage({
         type: 'aitomate:runner:play-suite',
         tabId: tab.id,
@@ -263,6 +279,63 @@ export default function RunView() {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {runReport && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{
+            padding: '10px 12px', borderRadius: 8, fontSize: 13,
+            background: runReport.passed ? '#e8f5e9' : '#fce4ec',
+            border: `1px solid ${runReport.passed ? '#c8e6c9' : '#f5c6cb'}`,
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              {runReport.passed ? 'Passed' : 'Failed'}
+              <span style={{ fontWeight: 400, color: '#777', marginLeft: 8, fontSize: 11 }}>
+                {runReport.durationMs}ms &middot; {runReport.steps.length} step{runReport.steps.length === 1 ? '' : 's'}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: '#777', cursor: 'pointer' }}>
+              <input type="checkbox" checked={reportAdvanced} onChange={(e) => setReportAdvanced(e.target.checked)} />
+              Advanced
+            </label>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            {runReport.steps.map((s, i) => (
+              <div key={s.stepId} style={{
+                padding: '8px 10px', marginBottom: 4,
+                border: '1px solid #e0e0e0', borderRadius: 6,
+                background: s.status === 'passed' ? '#f1f8e9' : s.status === 'failed' ? '#fff3e0' : '#fafafa',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    background: s.status === 'passed' ? '#2e7d32' : s.status === 'failed' ? '#d32f2f' : '#ccc',
+                  }} />
+                  <span style={{ flex: 1, color: '#333' }}>Step {i + 1}: {s.action}</span>
+                  <span style={{ fontSize: 10, color: '#999' }}>
+                    {s.status === 'passed' && `${s.durationMs}ms`}
+                    {s.status === 'failed' && 'Failed'}
+                    {s.status === 'skipped' && 'Skipped'}
+                  </span>
+                </div>
+                {reportAdvanced && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: '#555', lineHeight: 1.5 }}>
+                    <div>stepId: {s.stepId}</div>
+                    <div>action: {s.action}</div>
+                    <div>status: {s.status}</div>
+                    {s.error && <div style={{ color: '#d32f2f' }}>error: {s.error}</div>}
+                    {s.attempts !== undefined && <div>attempts: {s.attempts}</div>}
+                    {s.durationMs !== undefined && <div>durationMs: {s.durationMs}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </section>

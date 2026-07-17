@@ -6,6 +6,7 @@ import type {
   RecorderStateMessage,
   RecorderStepsResponse,
 } from '@/lib/recorder/messages';
+import { buildRunReport, type RunReport } from '@/lib/runner/report';
 import { captureNavigation } from '@/lib/recorder/capture';
 import { reduceSession, type RecorderSessionState } from '@/lib/recorder/session';
 import {
@@ -14,7 +15,7 @@ import {
   saveRecording,
   type TabRecording,
 } from '@/lib/recorder/store';
-import type { RunnerCommand, RunnerStateMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
+import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
 import { findScenarioByName, listScenarios } from '@/lib/import-export';
 import { runSuite, type SuiteReport, type SuiteScenarioRef } from '@/lib/runner/suite';
 import { runSetup } from '@/lib/runner/chaining';
@@ -125,6 +126,15 @@ async function broadcastRunnerState(
   }
 }
 
+async function broadcastRunReport(tabId: number, report: RunReport): Promise<void> {
+  const message: RunnerRunReportMessage = { type: 'aitomate:runner:run-report', tabId, report };
+  try {
+    await browser.runtime.sendMessage(message);
+  } catch {
+    // No panel listening — fine.
+  }
+}
+
 interface RunOutcome {
   passed: boolean;
   error?: string;
@@ -146,6 +156,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
   const ctrl: RunControl = { stopped: false, pausePromise: null, resume: null };
   runControl.set(tabId, ctrl);
   const llmGenerate = buildLlmGenerate();
+  const startedAt = Date.now();
 
   debugLog('run-seq', `starting scenario="${scenario.meta.name}" tabId=${tabId} steps=${scenario.steps.length}`);
 
@@ -239,6 +250,16 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
   }
 
   deleteControl(tabId);
+
+  const finishedAt = Date.now();
+  const report = buildRunReport({
+    scenarioName: scenario.meta.name,
+    steps: scenario.steps,
+    results: run.results,
+    startedAt,
+    finishedAt,
+  });
+  void broadcastRunReport(tabId, report);
 
   return {
     passed: run.session.status === 'done',
