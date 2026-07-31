@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0",
+  "meta": {
+    "name": "Demo SSR — Sign Up Full Flow",
+    "description": "End-to-end test covering all form controls (text, email, select, radio, checkbox, textarea), CSRF auto-exclusion, FR-7 assertion set (elementVisible, elementNotVisible, textContains, urlMatches, elementCount, elementEnabled, elementDisabled, inputValue), and post-submit verification on success.html. Static resolvers only — zero setup required.",
+    "tags": ["demo", "ssr", "signup", "e2e"]
+  },
+  "steps": [
+    { "id": "s01", "action": "navigate", "url": "{{BASE_URL}}/index.html" },
+
+    { "id": "s02", "action": "fill", "selector": { "strategy": "testid", "value": "full-name-input" }, "resolver": { "type": "static", "value": "Jane Doe" } },
+    { "id": "s03", "action": "fill", "selector": { "strategy": "testid", "value": "email-input" }, "resolver": { "type": "static", "value": "jane@example.com" } },
+
+    { "id": "s04", "action": "fill", "selector": { "strategy": "testid", "value": "role-select" }, "resolver": { "type": "static", "value": "developer" } },
+
+    { "id": "s05", "action": "click", "selector": { "strategy": "testid", "value": "plan-pro" } },
+
+    { "id": "s06", "action": "click", "selector": { "strategy": "testid", "value": "show-advanced-checkbox" }, "description": "Show advanced options" },
+
+    { "id": "s07", "action": "wait", "durationMs": 500 },
+
+    { "id": "s08", "action": "assert", "assertion": "elementEnabled", "selector": { "strategy": "testid", "value": "advanced-toggle-btn" } },
+    { "id": "s09", "action": "assert", "assertion": "elementVisible", "selector": { "strategy": "testid", "value": "advanced-panel" } },
+    { "id": "s10", "action": "assert", "assertion": "elementNotVisible", "selector": { "strategy": "css", "value": "input[name=_csrf]" }, "description": "CSRF hidden field is excluded from recorder and not visible" },
+
+    { "id": "s11", "action": "fill", "selector": { "strategy": "testid", "value": "notes-textarea" }, "resolver": { "type": "static", "value": "Testing Aitomate features." } },
+
+    { "id": "s12", "action": "click", "selector": { "strategy": "testid", "value": "subscribe-checkbox" } },
+
+    { "id": "s13", "action": "assert", "assertion": "elementCount", "selector": { "strategy": "testid", "value": "feature-item" }, "count": 3, "comparator": "eq" },
+
+    { "id": "s14", "action": "click", "selector": { "strategy": "testid", "value": "submit-button" } },
+
+    { "id": "s15", "action": "wait", "durationMs": 1000 },
+
+    { "id": "s16", "action": "assert", "assertion": "elementVisible", "selector": { "strategy": "testid", "value": "success-banner" } },
+    { "id": "s17", "action": "assert", "assertion": "urlMatches", "pattern": "**/success.html*" },
+
+    { "id": "s18", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-full_name" }, "value": "Jane Doe" },
+    { "id": "s19", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-email" }, "value": "jane@example.com" },
+    { "id": "s20", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-role" }, "value": "developer" },
+    { "id": "s21", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-plan" }, "value": "pro" },
+    { "id": "s22", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-subscribe" }, "value": "on" },
+    { "id": "s23", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-notes" }, "value": "Testing Aitomate features." },
+
+    { "id": "s24", "action": "assert", "assertion": "elementNotVisible", "selector": { "strategy": "testid", "value": "external-link" } },
+
+    { "id": "s25", "action": "assert", "assertion": "elementNotVisible", "selector": { "strategy": "testid", "value": "advanced-panel" }, "description": "Advanced panel not on success page" },
+
+    { "id": "s26", "action": "click", "selector": { "strategy": "testid", "value": "back-link" } },
+
+    { "id": "s27", "action": "wait", "durationMs": 500 },
+
+    { "id": "s28", "action": "assert", "assertion": "elementNotVisible", "selector": { "strategy": "testid", "value": "advanced-panel" }, "description": "Fresh page load — advanced panel hidden by default" },
+    { "id": "s29", "action": "assert", "assertion": "elementDisabled", "selector": { "strategy": "testid", "value": "advanced-toggle-btn" } },
+    { "id": "s30", "action": "assert", "assertion": "elementCount", "selector": { "strategy": "testid", "value": "feature-item" }, "count": 3, "comparator": "gte" },
+
+    { "id": "s31", "action": "assert", "assertion": "elementVisible", "selector": { "strategy": "testid", "value": "external-link" } }
+  ]
+}

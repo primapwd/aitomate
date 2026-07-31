@@ -34,17 +34,29 @@ export const DEFAULT_DOM_WAIT_TIMEOUT_MS = 30_000;
  * destroy the content-script instance). All other step types are forwarded to
  * the content script for DOM interaction.
  */
+/** Replace {{BASE_URL}} in a URL string with the given base. */
+export function resolveUrl(url: string, baseUrl?: string): string {
+  if (!baseUrl) return url;
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  // Replacer must be a function, not a string — `String.prototype.replace`
+  // treats `$&`/`$$`/`` $` ``/`$'` specially in a string replacement, so a
+  // base URL containing a literal `$` (e.g. in basic-auth credentials or a
+  // query param) would otherwise corrupt the resolved URL.
+  return url.replace(/\{\{BASE_URL\}\}/g, () => trimmed);
+}
+
 export async function executeStepWithRetry(
   tabId: number,
   step: Step,
   signal?: { stopped: () => boolean },
   llmGenerate?: LlmGenerateFn,
+  baseUrl?: string,
 ): Promise<StepResult> {
   const maxRetries = step.options?.retry?.count ?? DEFAULT_RETRY_COUNT;
   const baseBackoff = step.options?.retry?.backoffMs ?? DEFAULT_BACKOFF_MS;
 
   if (step.action === 'navigate') {
-    return executeNavigation(tabId, step);
+    return executeNavigation(tabId, step, baseUrl);
   }
 
   return executeDomStep(tabId, step, maxRetries, baseBackoff, signal, llmGenerate);
@@ -53,12 +65,30 @@ export async function executeStepWithRetry(
 async function executeNavigation(
   tabId: number,
   step: Step & { action: 'navigate' },
+  baseUrl?: string,
 ): Promise<StepResult> {
-  debugLog('step-exec', `navigate tab=${tabId} url=${step.url}`);
+  const resolvedUrl = resolveUrl(step.url, baseUrl);
+  debugLog('step-exec', `navigate tab=${tabId} url=${resolvedUrl}`);
   const startTime = performance.now();
+
+  // tabs.update doesn't reject an unresolved "{{BASE_URL}}/..." string — it's
+  // not a valid absolute URL, but Chrome accepts it and the navigation just
+  // goes nowhere real. Left unchecked, this step reports passed=true and the
+  // *next* step fails with an unrelated-looking "no content script" error,
+  // hiding the actual cause (Constitution: fail loud, fail clear).
+  if (resolvedUrl.includes('{{BASE_URL}}')) {
+    return {
+      stepId: step.id,
+      passed: false,
+      error: 'Navigate step needs {{BASE_URL}} but no Base URL is set — enter one in the Run view.',
+      attempts: 1,
+      durationMs: Math.round(performance.now() - startTime),
+    };
+  }
+
   try {
-    const url = step.url.startsWith('http') ? step.url : undefined;
-    await browser.tabs.update(tabId, { url: step.url });
+    const url = resolvedUrl.startsWith('http') ? resolvedUrl : undefined;
+    await browser.tabs.update(tabId, { url: resolvedUrl });
     if (url) {
       await waitForTabLoad(tabId, DEFAULT_DOM_WAIT_TIMEOUT_MS);
     }

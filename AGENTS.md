@@ -266,6 +266,24 @@ decision changes; bump its version and changelog.
   closes the gap. Both are verification/regression tests, not new product
   logic — the actual Firefox/Edge build + manual load-unpacked check is
   still a manual step, not something a unit test can cover).
+  Base URL / `{{BASE_URL}}` resolution (found + fixed during manual MVP
+  testing against `examples/demo-ssr/`): the spec (FR-3) always described
+  `{{BASE_URL}}`-style placeholders, but no step-executor code ever resolved
+  them — a scenario using the placeholder just navigated to the literal
+  string. `resolveUrl` in `step-executor.ts` now does the substitution;
+  `RunView.tsx` gained an optional "Base URL" input threaded through
+  `RunnerCommand.play` -> `background.ts` (merged into `scenario.meta.baseUrl`
+  before `runSequence`) -> `executeStepWithRetry`. Two things fixed on top of
+  the initial patch: (1) `chaining.ts`'s `runSetup` never received `baseUrl`
+  at all, so a setup scenario's own navigate steps (e.g. a login page) were
+  silently skipped by the substitution the main scenario got — same
+  "new orchestration path doesn't thread a needed value through" shape as
+  past bugs; fixed by adding a `baseUrl` param to `runSetup` and passing
+  `scenario.meta.baseUrl` from `background.ts`. (2) the original replace
+  used a *string* replacement (`url.replace(pattern, baseUrl)`) — `$&`/`$$`/
+  `` $` ``/`$'` are special in a string replacement, so a base URL
+  containing a literal `$` would corrupt the resolved URL; fixed with a
+  replacer *function* instead, which inserts the value literally.
 - Next: remaining spec §4 milestone items (Milestone 2: database/bridge,
   Milestone 3: plugins & release — see spec §4).
 - Task list and milestone breakdown: spec §4.
@@ -278,14 +296,17 @@ Run from repo root (pnpm workspaces):
 |---|---|
 | `pnpm install` | install all workspaces |
 | `pnpm dev` | WXT dev mode (Chrome, HMR) |
-| `pnpm build` | production build → `apps/extension/.output/chrome-mv3/` |
-| `pnpm build:firefox` | Firefox build → `.output/firefox-mv2/` |
+| `pnpm build` | production build → `apps/extension/output/chrome-mv3/` |
+| `pnpm build:firefox` | Firefox build → `output/firefox-mv2/` |
 | `pnpm test` | all workspace tests (Vitest) + Playwright E2E smoke |
 | `pnpm --filter aitomate-extension test:e2e` | build + run E2E smoke only |
 | `pnpm typecheck` | `tsc --noEmit` everywhere (runs `wxt prepare` first) |
 
 Load unpacked: `chrome://extensions` → Developer mode → Load unpacked →
-`apps/extension/.output/chrome-mv3`.
+`apps/extension/output/chrome-mv3` (no leading dot — `wxt.config.ts` sets
+`outDir: 'output'`, overriding WXT's dotfile default; a stray `.output/`
+directory left from before that override was set is a stale, never-rebuilt
+fossil — delete it, don't load unpacked from it).
 
 ## Structure
 
@@ -432,6 +453,54 @@ own diff against this list before calling a task done.
   in T2.12 (`BuildView.tsx`'s "Locate" button ignored the found/error
   response entirely, so a bad selector produced a silent no-op instead of
   the plain-language error the content script had already built).
+- **A new parameter is threaded to only one call site of a shared
+  function.** `step-executor.ts`'s `executeStepWithRetry` is called from
+  both `background.ts` (main scenario steps) and `chaining.ts`'s `runSetup`
+  (setup-scenario steps) — adding a new optional param (e.g. `baseUrl`) to
+  the function's signature and only updating the main-scenario call site
+  leaves the other caller silently passing `undefined`, no type error, no
+  test failure unless a test specifically exercises that second path. Grep
+  every call site of a function before considering a new parameter "wired
+  up". Caught when reviewing an in-progress `{{BASE_URL}}` resolution patch
+  (`runSetup` never got the new `baseUrl` param, so a setup scenario's own
+  navigate step silently skipped substitution). Same pattern resurfaced one
+  layer up: `runSequence` got `scenario.meta.baseUrl` threaded through
+  correctly, but the suite runner (`play-suite` handler in `background.ts`,
+  reusing `runSequence` via `runSuite`'s injected callback per T2.10) called
+  it with the raw stored scenario, never merging the Run view's Base URL
+  override in first — "Run all" silently ignored Base URL while a single
+  "Run" of the same scenario worked, since only the `play` handler merged
+  it. `aitomate:runner:play-suite` didn't even have a `baseUrl` field on its
+  message type at all. Found via manual testing: `{{BASE_URL}}/index.html`
+  logged unresolved in the debug console, which pointed straight at a
+  missing merge rather than a real "content script not injected" bug the
+  error message ("Could not establish connection") suggested at first
+  glance. Chasing this down also surfaced a real fail-loud gap: even after
+  both merge sites were fixed, `executeNavigation` (`step-executor.ts`)
+  still silently reported `passed: true` for a `navigate` step whose URL
+  still contained a literal `{{BASE_URL}}` — `tabs.update` doesn't reject a
+  non-absolute URL string, it just navigates nowhere real, so the actual
+  failure surfaced one step later as an unrelated-looking "no content
+  script" error on the *next* step, not on the navigate step that actually
+  caused it. Fixed by checking for a leftover `{{BASE_URL}}` in the resolved
+  URL and failing that step directly with a plain-language message, instead
+  of letting the run limp forward on a URL that never went anywhere. That
+  fail-loud fix is what finally surfaced the *actual* root cause: even with
+  Base URL typed and the side panel open (ruling out "popup closed and reset
+  the input"), the failure persisted — because `RunView.tsx`'s `handleRun`
+  (the single-scenario "Run" button) was a `useCallback` with an **empty
+  dependency array** closing over `baseUrl`. It captured the input's
+  first-render value (`''`) forever; every subsequent run sent
+  `baseUrl: undefined` no matter what the field showed on screen, since
+  `useCallback([])` never picks up the state's current value on re-render.
+  `handleRunAll` didn't have this bug (its deps already included `baseUrl`
+  from the suite fix above) — only the more commonly-used single-Run path
+  did. Fixed by adding `baseUrl` to `handleRun`'s dependency array. Lesson:
+  `useCallback`/`useEffect` dependency arrays are not optional bookkeeping —
+  an empty array is a real functional claim ("this closure never needs
+  today's state"), and it's exactly as easy to get wrong silently as any of
+  the "parameter threaded to only one call site" bugs above, just at the
+  React-hook layer instead of the function-signature layer.
 - **Two components independently read the same persisted flag to decide
   the same thing.** If a parent and child both read the same
   `storage.local`/`storage.session` key to each separately decide

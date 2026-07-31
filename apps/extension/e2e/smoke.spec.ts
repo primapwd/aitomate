@@ -17,7 +17,11 @@ test('popup renders the Build/Run/Settings shell, defaulting to Run', async ({
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
-  await expect(page.getByRole('heading', { name: 'Aitomate' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Aitomate', exact: true })).toBeVisible();
+
+  // Dismiss the first-run onboarding wizard (T4.4)
+  const skipBtn = page.getByRole('button', { name: 'Skip' });
+  if (await skipBtn.isVisible()) await skipBtn.click();
 
   const runTab = page.getByRole('button', { name: 'Run' });
   const buildTab = page.getByRole('button', { name: 'Build' });

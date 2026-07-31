@@ -25,6 +25,7 @@ export default function RunView() {
   const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
   const [runReport, setRunReport] = useState<RunReport | null>(null);
   const [reportAdvanced, setReportAdvanced] = useState(false);
+  const [baseUrl, setBaseUrl] = useState('');
   // background sends the final 'state' (done/error) broadcast, which nulls
   // runTabId, *before* the run-report broadcast for the same run. If React
   // re-renders (applying that null) before run-report arrives, matching on
@@ -112,6 +113,7 @@ export default function RunView() {
           type: 'aitomate:runner:play',
           tabId: tab.id,
           scenario: entry.scenario,
+          baseUrl: baseUrl || undefined,
         } as RunnerCommand);
       } catch (err) {
         setImportError(String(err));
@@ -119,7 +121,7 @@ export default function RunView() {
         setRunTabId(null);
       }
     },
-    [],
+    [baseUrl],
   );
 
   const handleDelete = useCallback(
@@ -147,12 +149,13 @@ export default function RunView() {
         type: 'aitomate:runner:play-suite',
         tabId: tab.id,
         scenarioRefs: scenarios.map((s) => ({ id: s.id, name: s.name })),
+        baseUrl: baseUrl || undefined,
       } as RunnerCommand);
     } catch (err) {
       setImportError(String(err));
       setSuiteRunning(false);
     }
-  }, [scenarios]);
+  }, [scenarios, baseUrl]);
 
   const handleStopSuite = useCallback(async () => {
     if (!runTabId) return;
@@ -191,6 +194,20 @@ export default function RunView() {
       {importError && (
         <p style={{ fontSize: 11, color: '#c33', marginTop: 8 }}>{importError}</p>
       )}
+
+      <div style={{ marginTop: 12 }}>
+        <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Base URL</label>
+        <p style={{ fontSize: 10, color: '#999', margin: '2px 0 4px' }}>Optional — resolves {'{{BASE_URL}}'} placeholders</p>
+        <input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder="e.g. http://localhost:8080"
+          style={{
+            display: 'block', width: '100%', marginTop: 4, padding: '6px 8px',
+            fontSize: 12, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box',
+          }}
+        />
+      </div>
 
       {scenarios.length > 0 && (
         <div style={{ marginTop: 16 }}>

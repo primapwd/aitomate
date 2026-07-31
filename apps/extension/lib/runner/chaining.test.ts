@@ -120,6 +120,29 @@ describe('runSetup', () => {
     const result = await runSetup(TAB_ID, { scenarioRef: 'Login' }, findScenario, alwaysStopped);
     expect(result.ok).toBe(true);
   });
+
+  it('threads baseUrl into the setup scenario\'s own navigate steps', async () => {
+    const withNavigate = makeScenario({
+      steps: [{ id: 's1', action: 'navigate', url: '{{BASE_URL}}/login' }],
+    });
+    const findScenario: SetupLookup = async () => ({ scenario: withNavigate });
+    vi.spyOn(browser.tabs, 'update').mockResolvedValue({} as any);
+    vi.spyOn(browser.tabs, 'get').mockResolvedValue({ status: 'complete' } as any);
+
+    const result = await runSetup(
+      TAB_ID,
+      { scenarioRef: 'Login' },
+      findScenario,
+      alwaysStopped,
+      undefined,
+      'http://localhost:8080',
+    );
+
+    expect(result.ok).toBe(true);
+    expect(browser.tabs.update).toHaveBeenCalledWith(TAB_ID, {
+      url: 'http://localhost:8080/login',
+    });
+  });
 });
 
 describe('checkSessionMarker', () => {

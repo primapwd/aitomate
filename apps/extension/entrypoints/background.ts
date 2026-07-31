@@ -179,6 +179,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
       findScenarioByName,
       { stopped: () => ctrl.stopped },
       llmGenerate,
+      scenario.meta.baseUrl,
     );
     if (!setupOutcome.ok) {
       // Setup failed — report and stop the main run
@@ -218,6 +219,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
       step,
       { stopped: () => ctrl.stopped },
       llmGenerate,
+      scenario.meta.baseUrl,
     );
 
     run.results.push(result);
@@ -374,8 +376,12 @@ export default defineBackground(() => {
             if (run.session.status === 'playing' && runControl.has(message.tabId)) {
               return;
             }
+            // Merge override base URL into scenario meta (FR-3 env profiles)
+            const mergedScenario = message.baseUrl
+              ? { ...message.scenario, meta: { ...message.scenario.meta, baseUrl: message.baseUrl } }
+              : message.scenario;
             // Fire-and-forget: the runner loop runs asynchronously.
-            void runSequence(message.tabId, message.scenario);
+            void runSequence(message.tabId, mergedScenario);
           })();
 
         case 'aitomate:runner:pause':
@@ -472,7 +478,14 @@ export default defineBackground(() => {
                 if (!entry) {
                   return { passed: false, error: `Scenario "${ref.name}" not found`, results: [] };
                 }
-                return runSequence(tabId, entry.scenario);
+                // Merge override base URL into scenario meta, same as the
+                // single-run 'play' handler (FR-3 env profiles) — the suite
+                // runner reuses runSequence per scenario, so it needs the
+                // same merge, not a bespoke copy of it.
+                const scenarioToRun = message.baseUrl
+                  ? { ...entry.scenario, meta: { ...entry.scenario.meta, baseUrl: message.baseUrl } }
+                  : entry.scenario;
+                return runSequence(tabId, scenarioToRun);
               },
               { stopped: () => sctrl.stopped },
               {},

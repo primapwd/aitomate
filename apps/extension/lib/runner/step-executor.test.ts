@@ -5,6 +5,7 @@ import {
   DEFAULT_BACKOFF_MS,
   DEFAULT_RETRY_COUNT,
   executeStepWithRetry,
+  resolveUrl,
 } from './step-executor';
 
 const TAB_ID = 42;
@@ -181,6 +182,69 @@ describe('executeStepWithRetry', () => {
 
     const result = await executeStepWithRetry(TAB_ID, navigateStep);
     expect(result.passed).toBe(true);
+  });
+
+  it('resolves {{BASE_URL}} in a navigate step before calling tabs.update', async () => {
+    const navigateStep = makeStep({ action: 'navigate', url: '{{BASE_URL}}/checkout' });
+
+    vi.spyOn(browser.tabs, 'update').mockResolvedValue({} as any);
+    vi.spyOn(browser.tabs, 'get').mockResolvedValue({ status: 'complete' } as any);
+
+    const result = await executeStepWithRetry(
+      TAB_ID,
+      navigateStep,
+      undefined,
+      undefined,
+      'http://localhost:8080/',
+    );
+
+    expect(result.passed).toBe(true);
+    expect(browser.tabs.update).toHaveBeenCalledWith(TAB_ID, {
+      url: 'http://localhost:8080/checkout',
+    });
+  });
+
+  it('fails loud instead of navigating when {{BASE_URL}} is unresolved', async () => {
+    const navigateStep = makeStep({ action: 'navigate', url: '{{BASE_URL}}/checkout' });
+    const update = vi.spyOn(browser.tabs, 'update').mockResolvedValue({} as any);
+
+    const result = await executeStepWithRetry(TAB_ID, navigateStep);
+
+    expect(result.passed).toBe(false);
+    expect(result.error).toContain('Base URL');
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveUrl', () => {
+  it('returns the url unchanged when no baseUrl is given', () => {
+    expect(resolveUrl('{{BASE_URL}}/checkout')).toBe('{{BASE_URL}}/checkout');
+  });
+
+  it('returns the url unchanged when it has no placeholder', () => {
+    expect(resolveUrl('/checkout', 'http://localhost:8080')).toBe('/checkout');
+  });
+
+  it('substitutes {{BASE_URL}}, stripping a trailing slash from baseUrl', () => {
+    expect(resolveUrl('{{BASE_URL}}/checkout', 'http://localhost:8080/')).toBe(
+      'http://localhost:8080/checkout',
+    );
+  });
+
+  it('substitutes every occurrence of the placeholder', () => {
+    expect(resolveUrl('{{BASE_URL}}/a?next={{BASE_URL}}/b', 'http://x.test')).toBe(
+      'http://x.test/a?next=http://x.test/b',
+    );
+  });
+
+  it('treats a baseUrl containing "$" as literal text, not a replace-pattern', () => {
+    // String.prototype.replace treats "$&"/"$$"/"$`"/"$'" specially when the
+    // replacement is a string — resolveUrl must not let a base URL
+    // containing "$" (e.g. basic-auth creds, a "$"-bearing query param)
+    // corrupt the result.
+    expect(resolveUrl('{{BASE_URL}}/x', 'http://u:p$&ss@host')).toBe(
+      'http://u:p$&ss@host/x',
+    );
   });
 });
 
