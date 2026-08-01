@@ -26,6 +26,11 @@ export default function RunView() {
   const [runReport, setRunReport] = useState<RunReport | null>(null);
   const [reportAdvanced, setReportAdvanced] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
+  // Live "which step is running" progress (currentStepIndex/totalSteps from
+  // the runner session) — updated on every 'playing' broadcast, not just the
+  // terminal done/error one, so the UI reflects mid-run progress instead of
+  // just "Running…" with no indication of where the run actually is.
+  const [stepProgress, setStepProgress] = useState<{ index: number; total: number } | null>(null);
   // background sends the final 'state' (done/error) broadcast, which nulls
   // runTabId, *before* the run-report broadcast for the same run. If React
   // re-renders (applying that null) before run-report arrives, matching on
@@ -61,6 +66,16 @@ export default function RunView() {
           }
         }
       }
+      // Live step progress — matched via the ref (not the runTabId state) so
+      // it keeps updating during a suite run too, same reasoning as the
+      // run-report match above: state updates lag a render behind the ref.
+      if (m.type === 'aitomate:runner:state' && m.tabId === runTabIdRef.current) {
+        if (m.state.status === 'playing' || m.state.status === 'paused') {
+          setStepProgress({ index: m.state.currentStepIndex, total: m.state.totalSteps });
+        } else if (m.state.status === 'done' || m.state.status === 'error' || m.state.status === 'idle') {
+          setStepProgress(null);
+        }
+      }
       if (m.type === 'aitomate:runner:run-report' && m.tabId === runTabIdRef.current) {
         setRunReport(m.report);
       }
@@ -70,6 +85,7 @@ export default function RunView() {
         setRunningId(null);
         setRunTabId(null);
         setRunReport(null);
+        setStepProgress(null);
       }
     };
     browser.runtime.onMessage.addListener(handler);
@@ -99,6 +115,7 @@ export default function RunView() {
       setRunReport(null);
       setImportError('');
       setRunningId(entry.id);
+      setStepProgress(null);
       try {
         const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) {
@@ -136,6 +153,7 @@ export default function RunView() {
     setImportError('');
     setSuiteReport(null);
     setSuiteRunning(true);
+    setStepProgress(null);
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) {
@@ -243,7 +261,11 @@ export default function RunView() {
                     cursor: runningId === entry.id ? 'default' : 'pointer',
                   }}
                 >
-                  {runningId === entry.id ? 'Running…' : 'Run'}
+                  {runningId === entry.id
+                    ? stepProgress
+                      ? `Step ${stepProgress.index + 1}/${stepProgress.total}`
+                      : 'Running…'
+                    : 'Run'}
                 </button>
                 <button
                   onClick={() => handleDelete(entry.id)}
@@ -261,6 +283,14 @@ export default function RunView() {
                   ✕
                 </button>
               </div>
+              {runningId === entry.id && stepProgress && (
+                <p style={{ fontSize: 10, color: '#666', margin: '4px 0 0' }}>
+                  Running step {stepProgress.index + 1} of {stepProgress.total}
+                  {entry.scenario.steps[stepProgress.index] && (
+                    <>: {entry.scenario.steps[stepProgress.index].action} ({entry.scenario.steps[stepProgress.index].id})</>
+                  )}
+                </p>
+              )}
             </div>
           ))}
           {scenarios.length > 1 && (
@@ -281,6 +311,12 @@ export default function RunView() {
                   Export suite ({scenarios.length})
                 </button>
               </div>
+
+              {suiteRunning && stepProgress && (
+                <p style={{ fontSize: 10, color: '#666', textAlign: 'center', margin: '6px 0 0' }}>
+                  Running step {stepProgress.index + 1} of {stepProgress.total} in the current scenario
+                </p>
+              )}
 
               {suiteReport && (
                 <div style={{ marginTop: 12, padding: 10, background: '#f5f5f5', borderRadius: 8, fontSize: 12 }}>

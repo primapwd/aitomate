@@ -284,6 +284,29 @@ decision changes; bump its version and changelog.
   `` $` ``/`$'` are special in a string replacement, so a base URL
   containing a literal `$` would corrupt the resolved URL; fixed with a
   replacer *function* instead, which inserts the value literally.
+  Manual testing against `examples/demo-ssr/` also surfaced: (1) a run-all
+  (suite) never merged the Base URL override at all — only the single-run
+  `play` handler did, same "new param, one call site" shape, this time one
+  layer up at the message-protocol level (`aitomate:runner:play-suite` had
+  no `baseUrl` field); (2) `executeNavigation` silently reported
+  `passed: true` for a navigate step whose URL still contained a literal
+  `{{BASE_URL}}` — `tabs.update` doesn't reject a non-absolute URL, so the
+  real failure surfaced one step later as an unrelated "no content script"
+  error instead of on the navigate step that actually caused it; fixed by
+  failing that step directly with a plain-language message instead of
+  limping forward; (3) the actual root cause once both of those were fixed:
+  `RunView.tsx`'s `handleRun` was a `useCallback` with an **empty dependency
+  array**, closing over `baseUrl`'s first-render value (`''`) forever —
+  every run sent `baseUrl: undefined` regardless of what the field showed.
+  `useCallback`/`useEffect` dependency arrays are a real functional claim,
+  not bookkeeping — get one wrong and it's exactly as silent as a
+  parameter never threaded to a call site, just one layer up the stack.
+  Also added: live step progress in the Run view (`stepProgress` state,
+  matched via `runTabIdRef` so it keeps updating during a suite run same as
+  the run-report match) — before this, the UI only said "Running…" with no
+  indication of which step was executing; `RunnerSessionState` already
+  carried `currentStepIndex`/`totalSteps`, broadcast on every step, but
+  nothing in the UI read it.
 - Next: remaining spec §4 milestone items (Milestone 2: database/bridge,
   Milestone 3: plugins & release — see spec §4).
 - Task list and milestone breakdown: spec §4.
