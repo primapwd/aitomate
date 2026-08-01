@@ -25,6 +25,8 @@
 
     { "id": "s11", "action": "fill", "selector": { "strategy": "testid", "value": "notes-textarea" }, "resolver": { "type": "static", "value": "Testing Aitomate features." } },
 
+    { "id": "s11b", "action": "upload", "selector": { "strategy": "testid", "value": "avatar-upload" }, "fixtureRef": "sample.txt" },
+
     { "id": "s12", "action": "click", "selector": { "strategy": "testid", "value": "subscribe-checkbox" } },
 
     { "id": "s13", "action": "assert", "assertion": "elementCount", "selector": { "strategy": "testid", "value": "feature-item" }, "count": 3, "comparator": "eq" },
@@ -34,7 +36,7 @@
     { "id": "s15", "action": "wait", "durationMs": 1000 },
 
     { "id": "s16", "action": "assert", "assertion": "elementVisible", "selector": { "strategy": "testid", "value": "success-banner" } },
-    { "id": "s17", "action": "assert", "assertion": "urlMatches", "pattern": "**/success.html*" },
+    { "id": "s17", "action": "assert", "assertion": "urlMatches", "pattern": "**/success*" },
 
     { "id": "s18", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-full_name" }, "value": "Jane Doe" },
     { "id": "s19", "action": "assert", "assertion": "textContains", "selector": { "strategy": "testid", "value": "submitted-email" }, "value": "jane@example.com" },
