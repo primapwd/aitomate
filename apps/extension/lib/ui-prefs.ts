@@ -9,10 +9,15 @@ const PREFS_KEY = 'aitomate:ui:prefs';
 
 export interface UiPrefs {
   buildMode: 'simple' | 'advanced';
+  /** Last Base URL override typed in the Run view (FR-3 env profiles) — a
+   * plain per-user text input, not a secret. Persisted so a PO doesn't have
+   * to retype it every time the popup/side panel closes and reopens. */
+  runBaseUrl: string;
 }
 
 const DEFAULT_PREFS: UiPrefs = {
   buildMode: 'simple',
+  runBaseUrl: '',
 };
 
 export async function getUiPrefs(): Promise<UiPrefs> {

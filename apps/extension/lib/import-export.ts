@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import type { Scenario, Step } from '@aitomate/schema';
 import { SCHEMA_VERSION } from '@aitomate/schema';
 import { safeParseScenario } from '@aitomate/schema';
+import { slugify } from './slug';
 
 /**
  * T2.7: Import/export scenario files (.aitomate.json) with schema validation.
@@ -30,7 +31,19 @@ export interface ExportMeta {
   name?: string;
   description?: string;
   baseUrl?: string;
+  /** Kebab-case unique id. Auto-derived from name if omitted (see slug.ts). */
+  slug?: string;
   tags?: string[];
+}
+
+/**
+ * The slug a scenario is deduped/matched by. Older scenarios (imported
+ * before `meta.slug` existed) never got one persisted — this derives an
+ * equivalent one from `name` on the fly, so old and new data compare
+ * consistently without a storage migration.
+ */
+export function effectiveSlug(scenario: Scenario): string {
+  return scenario.meta.slug?.trim() || slugify(scenario.meta.name);
 }
 
 // ── Storage ──
@@ -43,6 +56,16 @@ export async function listScenarios(): Promise<StoredScenario[]> {
 export async function findScenarioByName(name: string): Promise<StoredScenario | undefined> {
   const all = await listScenarios();
   return all.find((s) => s.name === name || s.scenario.meta.name === name);
+}
+
+export async function findScenarioBySlug(slug: string): Promise<StoredScenario | undefined> {
+  const all = await listScenarios();
+  return all.find((s) => effectiveSlug(s.scenario) === slug);
+}
+
+export async function getScenarioById(id: string): Promise<StoredScenario | undefined> {
+  const all = await listScenarios();
+  return all.find((s) => s.id === id);
 }
 
 export async function saveScenario(scenario: Scenario): Promise<StoredScenario> {
@@ -60,9 +83,10 @@ export async function saveScenario(scenario: Scenario): Promise<StoredScenario> 
 
 export async function upsertScenario(scenario: Scenario): Promise<StoredScenario> {
   const all = await listScenarios();
-  const idx = all.findIndex((s) => s.name === scenario.meta.name);
+  const slug = effectiveSlug(scenario);
+  const idx = all.findIndex((s) => effectiveSlug(s.scenario) === slug);
   if (idx !== -1) {
-    all[idx] = { ...all[idx], scenario, importedAt: Date.now() };
+    all[idx] = { ...all[idx], name: scenario.meta.name, scenario, importedAt: Date.now() };
     await browser.storage.local.set({ [SCENARIOS_KEY]: all });
     return all[idx];
   }
@@ -75,6 +99,28 @@ export async function upsertScenario(scenario: Scenario): Promise<StoredScenario
   all.push(entry);
   await browser.storage.local.set({ [SCENARIOS_KEY]: all });
   return entry;
+}
+
+/**
+ * Save-or-overwrite gated by slug, not name (two scenarios can share a
+ * display name but never a slug) — the shared dedupe path for every UI
+ * entry point that writes a scenario into the library (Build view save,
+ * Run view import, onboarding import). `confirmOverwrite` is injected so
+ * this stays a plain, unit-testable function instead of calling
+ * `window.confirm` directly (Constitution: fail loud, fail clear — a
+ * declined confirm must not silently create a duplicate OR silently
+ * clobber the existing entry).
+ */
+export async function saveScenarioDeduped(
+  scenario: Scenario,
+  confirmOverwrite: (existingName: string) => boolean,
+): Promise<{ ok: true; entry: StoredScenario } | { ok: false }> {
+  const existing = await findScenarioBySlug(effectiveSlug(scenario));
+  if (existing && !confirmOverwrite(existing.name)) {
+    return { ok: false };
+  }
+  const entry = await upsertScenario(scenario);
+  return { ok: true, entry };
 }
 
 export async function deleteScenario(id: string): Promise<void> {
@@ -91,12 +137,14 @@ export function buildScenarioObject(
   meta?: ExportMeta,
 ): Scenario {
   const tags = structuredClone(meta?.tags)?.filter(Boolean) as string[] | undefined;
+  const name = meta?.name || 'Untitled Scenario';
   return {
     schemaVersion: SCHEMA_VERSION,
     meta: {
-      name: meta?.name || 'Untitled Scenario',
+      name,
       description: meta?.description || undefined,
       baseUrl: meta?.baseUrl || undefined,
+      slug: meta?.slug?.trim() || slugify(name),
       tags: tags ?? [],
     },
     dataSources: [],
@@ -140,6 +188,12 @@ export function findIncompleteStep(steps: Step[]): IncompleteStepInfo | null {
       return {
         index: i,
         message: `Step ${i + 1} (wait) is missing the element to wait for.`,
+      };
+    }
+    if (step.action === 'wait' && !step.forSelector && step.durationMs === undefined) {
+      return {
+        index: i,
+        message: `Step ${i + 1} (wait) needs either a duration or an element to wait for.`,
       };
     }
     if (

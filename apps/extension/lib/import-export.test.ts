@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
 import type { Step } from '@aitomate/schema';
 import {
@@ -6,11 +6,15 @@ import {
   buildScenarioObject,
   buildSuiteZip,
   deleteScenario,
+  effectiveSlug,
   findIncompleteStep,
   findScenarioByName,
+  findScenarioBySlug,
+  getScenarioById,
   importScenario,
   listScenarios,
   saveScenario,
+  saveScenarioDeduped,
   upsertScenario,
 } from './import-export';
 
@@ -68,6 +72,29 @@ describe('buildScenarioObject', () => {
       expect(obj).toEqual(fromJson.scenario);
     }
   });
+
+  it('auto-derives a slug from the name when none is given', () => {
+    const obj = buildScenarioObject(steps, { name: 'Sign Up Flow' });
+    expect(obj.meta.slug).toBe('sign-up-flow');
+  });
+
+  it('keeps a manually-provided slug instead of deriving one', () => {
+    const obj = buildScenarioObject(steps, { name: 'Sign Up Flow', slug: 'custom-slug' });
+    expect(obj.meta.slug).toBe('custom-slug');
+  });
+});
+
+describe('effectiveSlug', () => {
+  it('returns the persisted slug when present', () => {
+    const obj = buildScenarioObject(steps, { name: 'Login', slug: 'my-login' });
+    expect(effectiveSlug(obj)).toBe('my-login');
+  });
+
+  it('derives a slug from name for older scenarios with no meta.slug', () => {
+    const obj = buildScenarioObject(steps, { name: 'Login Test' });
+    const withoutSlug = { ...obj, meta: { ...obj.meta, slug: undefined } };
+    expect(effectiveSlug(withoutSlug)).toBe('login-test');
+  });
 });
 
 describe('upsertScenario', () => {
@@ -97,6 +124,31 @@ describe('upsertScenario', () => {
     expect(all[0].id).toBe(updated.id);
     expect(all[0].scenario.steps).toHaveLength(1);
     expect(all[0].scenario.steps[0].action).toBe('navigate');
+  });
+
+  it('replaces by slug even when the display name changed', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Old Name', slug: 'checkout' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+    await upsertScenario(parsed.scenario);
+
+    const parsed2 = importScenario(buildScenarioJson(steps, { name: 'New Name', slug: 'checkout' }));
+    if (!parsed2.ok) throw new Error('fixture failed');
+    await upsertScenario(parsed2.scenario);
+
+    const all = await listScenarios();
+    expect(all).toHaveLength(1);
+    expect(all[0].scenario.meta.name).toBe('New Name');
+  });
+
+  it('does not collide when two scenarios share a name but not a slug', async () => {
+    const a = importScenario(buildScenarioJson(steps, { name: 'Login', slug: 'login-v1' }));
+    const b = importScenario(buildScenarioJson(steps, { name: 'Login', slug: 'login-v2' }));
+    if (!a.ok || !b.ok) throw new Error('fixtures failed');
+
+    await upsertScenario(a.scenario);
+    await upsertScenario(b.scenario);
+
+    expect(await listScenarios()).toHaveLength(2);
   });
 });
 
@@ -186,6 +238,80 @@ describe('findScenarioByName', () => {
   });
 });
 
+describe('findScenarioBySlug', () => {
+  it('finds a scenario by its slug', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Login', slug: 'my-login' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+    await saveScenario(parsed.scenario);
+
+    const found = await findScenarioBySlug('my-login');
+    expect(found).toBeDefined();
+    expect(found!.scenario.meta.name).toBe('Login');
+  });
+
+  it('returns undefined for unknown slug', async () => {
+    expect(await findScenarioBySlug('nope')).toBeUndefined();
+  });
+});
+
+describe('saveScenarioDeduped', () => {
+  it('saves without prompting when no slug collision exists', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Login' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+
+    const confirmOverwrite = vi.fn(() => true);
+    const result = await saveScenarioDeduped(parsed.scenario, confirmOverwrite);
+    expect(result.ok).toBe(true);
+    expect(confirmOverwrite).not.toHaveBeenCalled();
+  });
+
+  it('prompts and overwrites when the confirm callback returns true', async () => {
+    const first = importScenario(buildScenarioJson(steps, { name: 'Login', slug: 'login' }));
+    if (!first.ok) throw new Error('fixture failed');
+    await saveScenarioDeduped(first.scenario, () => true);
+
+    const second = importScenario(buildScenarioJson(steps, { name: 'Login v2', slug: 'login' }));
+    if (!second.ok) throw new Error('fixture failed');
+    const confirmOverwrite = vi.fn(() => true);
+    const result = await saveScenarioDeduped(second.scenario, confirmOverwrite);
+
+    expect(result.ok).toBe(true);
+    expect(confirmOverwrite).toHaveBeenCalledWith('Login');
+    expect(await listScenarios()).toHaveLength(1);
+  });
+
+  it('does not save when the confirm callback returns false', async () => {
+    const first = importScenario(buildScenarioJson(steps, { name: 'Login', slug: 'login' }));
+    if (!first.ok) throw new Error('fixture failed');
+    await saveScenarioDeduped(first.scenario, () => true);
+
+    const second = importScenario(buildScenarioJson(steps, { name: 'Login v2', slug: 'login' }));
+    if (!second.ok) throw new Error('fixture failed');
+    const result = await saveScenarioDeduped(second.scenario, () => false);
+
+    expect(result.ok).toBe(false);
+    const all = await listScenarios();
+    expect(all).toHaveLength(1);
+    expect(all[0].scenario.meta.name).toBe('Login');
+  });
+});
+
+describe('getScenarioById', () => {
+  it('finds a scenario by its stored id', async () => {
+    const parsed = importScenario(buildScenarioJson(steps, { name: 'Login' }));
+    if (!parsed.ok) throw new Error('fixture failed');
+    const entry = await saveScenario(parsed.scenario);
+
+    const found = await getScenarioById(entry.id);
+    expect(found).toBeDefined();
+    expect(found!.scenario.meta.name).toBe('Login');
+  });
+
+  it('returns undefined for an unknown id', async () => {
+    expect(await getScenarioById('nope')).toBeUndefined();
+  });
+});
+
 describe('scenario storage', () => {
   it('saves, lists, and deletes scenarios', async () => {
     const parsed = importScenario(buildScenarioJson(steps, { name: 'Login' }));
@@ -238,6 +364,12 @@ describe('findIncompleteStep', () => {
 
   it('does not flag a wait step with only a duration', () => {
     expect(findIncompleteStep([{ id: 's1', action: 'wait', durationMs: 1000 }])).toBeNull();
+  });
+
+  it('flags a wait step with neither a duration nor a forSelector', () => {
+    const result = findIncompleteStep([{ id: 's1', action: 'wait' }]);
+    expect(result).not.toBeNull();
+    expect(result?.message).toContain('duration');
   });
 
   it('returns the first incomplete step when several are incomplete', () => {

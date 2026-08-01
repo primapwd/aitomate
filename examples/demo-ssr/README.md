@@ -4,13 +4,22 @@ Static, dependency-free HTML fixture for manually testing the extension.
 No build step — serve it with anything:
 
 ```bash
-npx serve examples/demo-ssr
-# or
-python3 -m http.server 8080 --directory examples/demo-ssr
+python3 -m http.server 8081 --directory examples/demo-ssr
+# or (avoid if you also need urlMatches on a ".html" URL — see caveat below)
+npx serve examples/demo-ssr -l 8081
 ```
 
-Then open `http://localhost:<port>/index.html`, load the unpacked extension,
-and record against it.
+Then open `http://localhost:8081/index.html`, load the unpacked extension,
+and record against it. Port 8081 (not 8080) sidesteps a clash with
+`pnpm dev`'s own server, and matches the Base URL baked into
+`test-ssr.aitomate.json` (see below).
+
+`npx serve` rewrites URLs by default (`cleanUrls`): `/index.html` redirects
+to `/`, `/success.html` redirects to `/success` — the `.html` suffix never
+survives. That breaks any `urlMatches` assertion pattern that ends in
+`.html`, and can silently drop query params through the redirect too.
+`python3 -m http.server` does no rewriting at all, so prefer it if your
+scenario asserts on exact URLs.
 
 ## What it exercises
 
@@ -40,3 +49,8 @@ and record against it.
 5. Assert `urlMatches` on `**/success.html*`.
 6. Assert `textContains` on `submitted-full_name` for the name you filled.
 7. Save to library, then re-run it from the Run view.
+
+Alternatively, import the ready-made `test-ssr.aitomate.json` in this
+directory — it covers all the rows above (including file upload) and
+already has `meta.baseUrl` set to `http://localhost:8081`, so the Run
+view's Base URL field can stay blank if you're serving on that port.

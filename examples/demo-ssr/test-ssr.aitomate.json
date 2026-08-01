@@ -3,7 +3,9 @@
   "meta": {
     "name": "Demo SSR — Sign Up Full Flow",
     "description": "End-to-end test covering all form controls (text, email, select, radio, checkbox, textarea), CSRF auto-exclusion, FR-7 assertion set (elementVisible, elementNotVisible, textContains, urlMatches, elementCount, elementEnabled, elementDisabled, inputValue), and post-submit verification on success.html. Static resolvers only — zero setup required.",
-    "tags": ["demo", "ssr", "signup", "e2e"]
+    "tags": ["demo", "ssr", "signup", "e2e"],
+    "baseUrl": "http://localhost:8081",
+    "slug": "demo-ssr-signup-full-flow"
   },
   "steps": [
     { "id": "s01", "action": "navigate", "url": "{{BASE_URL}}/index.html" },

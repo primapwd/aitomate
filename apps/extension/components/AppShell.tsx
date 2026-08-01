@@ -20,6 +20,16 @@ export interface AppShellProps {
 // Default view is Run — least intimidating for the PO persona (spec §3.8).
 export default function AppShell({ variant = 'popup' }: AppShellProps) {
   const [view, setView] = useState<ShellView>('run');
+  // Set by RunView's "Edit" button, consumed by BuildView to load an
+  // already-imported scenario's steps + meta back into the editor. Owned
+  // here (not in either view) since it's the thing that both crosses views
+  // and switches which one is active.
+  const [editScenarioId, setEditScenarioId] = useState<string | null>(null);
+
+  const handleEditScenario = (id: string) => {
+    setEditScenarioId(id);
+    setView('build');
+  };
 
   const handleOpenSidePanel = async () => {
     try {
@@ -97,8 +107,13 @@ export default function AppShell({ variant = 'popup' }: AppShellProps) {
       </nav>
 
       <main style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
-        {view === 'run' && <RunView />}
-        {view === 'build' && <BuildView />}
+        {view === 'run' && <RunView onEdit={handleEditScenario} />}
+        {view === 'build' && (
+          <BuildView
+            editScenarioId={editScenarioId}
+            onEditConsumed={() => setEditScenarioId(null)}
+          />
+        )}
         {view === 'settings' && <SettingsView />}
       </main>
     </div>

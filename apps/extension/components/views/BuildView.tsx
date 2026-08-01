@@ -8,11 +8,13 @@ import {
   buildScenarioJson,
   buildScenarioObject,
   downloadJson,
+  effectiveSlug,
   findIncompleteStep,
-  findScenarioByName,
-  upsertScenario,
+  getScenarioById,
+  saveScenarioDeduped,
   type ExportMeta,
 } from '@/lib/import-export';
+import { slugify } from '@/lib/slug';
 import { buildManualStep, type ManualStepAction } from '@/lib/build/manual-step';
 import { stepSelector } from '@/lib/runner/dom';
 import type { RunnerContentCommand, RunnerContentEvent } from '@/lib/runner/messages';
@@ -21,7 +23,14 @@ import StepList from './build/StepList';
 
 type BuildMode = UiPrefs['buildMode'];
 
-export default function BuildView() {
+export interface BuildViewProps {
+  /** A scenario id (from RunView's "Edit" button) to load into the editor. */
+  editScenarioId?: string | null;
+  /** Called once the scenario named by editScenarioId has been loaded. */
+  onEditConsumed?: () => void;
+}
+
+export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewProps) {
   const [mode, setMode] = useState<BuildMode>('simple');
   const [tabId, setTabId] = useState<number | null>(null);
   const [recorderState, setRecorderState] = useState<RecorderSessionState>(initialSessionState);
@@ -29,6 +38,11 @@ export default function BuildView() {
   const [scenarioName, setScenarioName] = useState('');
   const [scenarioDesc, setScenarioDesc] = useState('');
   const [scenarioBaseUrl, setScenarioBaseUrl] = useState('');
+  const [scenarioSlug, setScenarioSlug] = useState('');
+  // Slug auto-derives from the name until the user edits it directly —
+  // once touched, typing a new name must not silently regenerate/override
+  // a slug the user (or a loaded existing scenario) already set.
+  const slugTouched = useRef(false);
   const [scenarioTags, setScenarioTags] = useState('');
   const [saveStatus, setSaveStatus] = useState<null | 'saving' | 'saved' | 'duplicate' | 'error'>(
     null,
@@ -98,6 +112,40 @@ export default function BuildView() {
       browser.runtime.onMessage.removeListener(handler);
     };
   }, [tabId, refresh]);
+
+  // Load an already-imported scenario for editing (RunView's "Edit" button).
+  // Pushes the steps into this tab's recorder-session store via set-steps —
+  // not just local React state — because `refresh()` above re-fetches steps
+  // from that same store on every recorder broadcast; setting local state
+  // alone would get silently clobbered by the next unrelated broadcast.
+  useEffect(() => {
+    if (!editScenarioId || !tabId) return;
+    let cancelled = false;
+    void getScenarioById(editScenarioId).then(async (entry) => {
+      if (!entry || cancelled) return;
+      await browser.runtime.sendMessage({
+        type: 'aitomate:recorder:set-steps',
+        tabId,
+        steps: entry.scenario.steps,
+      } as RecorderCommand);
+      if (cancelled) return;
+      setSteps(entry.scenario.steps);
+      setScenarioName(entry.scenario.meta.name);
+      setScenarioDesc(entry.scenario.meta.description ?? '');
+      setScenarioBaseUrl(entry.scenario.meta.baseUrl ?? '');
+      // An existing scenario already has an authoritative slug (or one
+      // derived consistently from its name) — load it and mark "touched" so
+      // further name edits in this session don't silently regenerate it out
+      // from under the identity the library already matched it by.
+      setScenarioSlug(effectiveSlug(entry.scenario));
+      slugTouched.current = true;
+      setScenarioTags(entry.scenario.meta.tags.join(', '));
+      onEditConsumed?.();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editScenarioId, tabId, onEditConsumed]);
 
   const sendCmd = useCallback(
     (type: 'aitomate:recorder:start' | 'aitomate:recorder:stop' | 'aitomate:recorder:resume') => {
@@ -221,6 +269,7 @@ export default function BuildView() {
       name: scenarioName.trim() || undefined,
       description: scenarioDesc.trim() || undefined,
       baseUrl: scenarioBaseUrl.trim() || undefined,
+      slug: scenarioSlug.trim() || undefined,
       tags: scenarioTags
         .split(',')
         .map((t) => t.trim())
@@ -229,7 +278,7 @@ export default function BuildView() {
     const json = buildScenarioJson(steps, meta);
     const name = scenarioName.trim() || 'scenario';
     downloadJson(json, name);
-  }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioTags]);
+  }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioSlug, scenarioTags]);
 
   const handleSave = useCallback(async () => {
     if (steps.length === 0) return;
@@ -240,37 +289,35 @@ export default function BuildView() {
     }
     setIncompleteError('');
     const name = scenarioName.trim() || 'Untitled Scenario';
-    // upsertScenario matches by name and silently overwrites — an unnamed
-    // save collides with any prior unnamed save under the same default name.
-    // Confirm before clobbering an existing library entry (fail loud, fail
-    // clear: a green "Saved" checkmark must never hide a destroyed scenario).
-    const existing = await findScenarioByName(name);
-    if (existing) {
-      const overwrite = window.confirm(
-        `A scenario named "${name}" already exists in the library. Overwrite it?`,
+    const meta: ExportMeta = {
+      name,
+      description: scenarioDesc.trim() || undefined,
+      baseUrl: scenarioBaseUrl.trim() || undefined,
+      slug: scenarioSlug.trim() || undefined,
+      tags: scenarioTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+    };
+    setSaveStatus('saving');
+    try {
+      const scenario = buildScenarioObject(steps, meta);
+      // Deduped by slug, not name — two scenarios can share a display name
+      // but never a slug. A declined confirm must not silently create a
+      // duplicate OR silently clobber the existing entry (fail loud, fail
+      // clear: a green "Saved" checkmark must never hide either outcome).
+      const result = await saveScenarioDeduped(scenario, (existingName) =>
+        window.confirm(
+          `A scenario with the same slug already exists ("${existingName}"). Overwrite it?`,
+        ),
       );
-      if (!overwrite) {
+      if (!result.ok) {
         setSaveStatus('duplicate');
         setTimeout(() => {
           setSaveStatus((s) => (s === 'duplicate' ? null : s));
         }, 3000);
         return;
       }
-    }
-
-    setSaveStatus('saving');
-    const meta: ExportMeta = {
-      name,
-      description: scenarioDesc.trim() || undefined,
-      baseUrl: scenarioBaseUrl.trim() || undefined,
-      tags: scenarioTags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
-    };
-    try {
-      const scenario = buildScenarioObject(steps, meta);
-      await upsertScenario(scenario);
       setSaveStatus('saved');
       setTimeout(() => {
         setSaveStatus((s) => (s === 'saved' ? null : s));
@@ -278,7 +325,7 @@ export default function BuildView() {
     } catch {
       setSaveStatus('error');
     }
-  }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioTags]);
+  }, [steps, scenarioName, scenarioDesc, scenarioBaseUrl, scenarioSlug, scenarioTags]);
 
   if (!tabId) {
     return (
@@ -341,8 +388,21 @@ export default function BuildView() {
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <input
                 value={scenarioName}
-                onChange={(e) => setScenarioName(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setScenarioName(value);
+                  if (!slugTouched.current) setScenarioSlug(slugify(value));
+                }}
                 placeholder="Scenario name"
+                style={exportInput}
+              />
+              <input
+                value={scenarioSlug}
+                onChange={(e) => {
+                  slugTouched.current = true;
+                  setScenarioSlug(e.target.value);
+                }}
+                placeholder="Slug (auto-generated, unique id — edit if you want)"
                 style={exportInput}
               />
               <input

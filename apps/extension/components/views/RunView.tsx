@@ -7,7 +7,7 @@ import {
   importScenario,
   listScenarios,
   pickFile,
-  saveScenario,
+  saveScenarioDeduped,
   type StoredScenario,
 } from '@/lib/import-export';
 import type { RunReport } from '@/lib/runner/report';
@@ -15,8 +15,14 @@ import { downloadReport } from '@/lib/runner/report-export';
 import OnboardingWizard from '@/components/OnboardingWizard';
 import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
+import { getUiPrefs, setUiPref } from '@/lib/ui-prefs';
 
-export default function RunView() {
+export interface RunViewProps {
+  /** Switch to Build view and load this scenario's steps + meta for editing. */
+  onEdit?: (id: string) => void;
+}
+
+export default function RunView({ onEdit }: RunViewProps) {
   const [scenarios, setScenarios] = useState<StoredScenario[]>([]);
   const [importError, setImportError] = useState('');
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -46,6 +52,21 @@ export default function RunView() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Restore the last Base URL override the PO typed — without this, a plain
+  // useState resets to '' every time the popup/side panel closes and
+  // reopens, forcing a retype on every session (the exact complaint this
+  // fixes: a scenario-authored default via meta.baseUrl already covers the
+  // "PO never has to touch this" case; this covers "PO needs a different
+  // one and shouldn't have to retype it constantly").
+  useEffect(() => {
+    void getUiPrefs().then((prefs) => setBaseUrl(prefs.runBaseUrl));
+  }, []);
+
+  const handleBaseUrlChange = useCallback((value: string) => {
+    setBaseUrl(value);
+    void setUiPref('runBaseUrl', value);
+  }, []);
 
   // Re-enable the Run button when the background reports the run ended —
   // without this it stays on "Running…" forever.
@@ -103,7 +124,18 @@ export default function RunView() {
         setImportError(result.error);
         return;
       }
-      await saveScenario(result.scenario);
+      // Deduped by slug, not a blind insert — importing the same file (or a
+      // different file that happens to share a slug) twice must not create
+      // a silent duplicate in the library.
+      const saved = await saveScenarioDeduped(result.scenario, (existingName) =>
+        window.confirm(
+          `A scenario with the same slug already exists ("${existingName}"). Overwrite it?`,
+        ),
+      );
+      if (!saved.ok) {
+        setImportError('Import cancelled — a scenario with the same slug already exists.');
+        return;
+      }
       await refresh();
     } catch (err) {
       setImportError(String(err));
@@ -215,10 +247,13 @@ export default function RunView() {
 
       <div style={{ marginTop: 12 }}>
         <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Base URL</label>
-        <p style={{ fontSize: 10, color: '#999', margin: '2px 0 4px' }}>Optional — resolves {'{{BASE_URL}}'} placeholders</p>
+        <p style={{ fontSize: 10, color: '#999', margin: '2px 0 4px' }}>
+          Optional — resolves {'{{BASE_URL}}'} placeholders. Leave blank to use a
+          scenario's own saved Base URL, if it has one.
+        </p>
         <input
           value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
+          onChange={(e) => handleBaseUrlChange(e.target.value)}
           placeholder="e.g. http://localhost:8080"
           style={{
             display: 'block', width: '100%', marginTop: 4, padding: '6px 8px',
@@ -243,6 +278,11 @@ export default function RunView() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12, flex: 1, color: '#333' }}>
                   {entry.name}
+                  {entry.scenario.meta.baseUrl && !baseUrl && (
+                    <span style={{ fontSize: 10, color: '#999', marginLeft: 6 }}>
+                      (uses saved Base URL: {entry.scenario.meta.baseUrl})
+                    </span>
+                  )}
                 </span>
                 <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>
                   {entry.scenario.steps.length} step
@@ -266,6 +306,22 @@ export default function RunView() {
                       ? `Step ${stepProgress.index + 1}/${stepProgress.total}`
                       : 'Running…'
                     : 'Run'}
+                </button>
+                <button
+                  onClick={() => onEdit?.(entry.id)}
+                  disabled={runningId === entry.id}
+                  title="Load into Build view to edit"
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 7px',
+                    border: '1px solid #ddd',
+                    borderRadius: 4,
+                    background: '#fff',
+                    color: '#333',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Edit
                 </button>
                 <button
                   onClick={() => handleDelete(entry.id)}

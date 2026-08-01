@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import {
   importScenario,
   pickFile,
-  saveScenario,
+  saveScenarioDeduped,
   type StoredScenario,
 } from '@/lib/import-export';
 import {
@@ -62,7 +62,15 @@ export default function OnboardingWizard({ onComplete }: Props) {
         setError(result.error);
         return;
       }
-      await saveScenario(result.scenario);
+      const saved = await saveScenarioDeduped(result.scenario, (existingName) =>
+        window.confirm(
+          `A scenario with the same slug already exists ("${existingName}"). Overwrite it?`,
+        ),
+      );
+      if (!saved.ok) {
+        setError('Import cancelled — a scenario with the same slug already exists.');
+        return;
+      }
       const needsConfig = scenarioNeedsConfig(result.scenario);
       dispatch({ type: 'SCENARIO_IMPORTED', needsConfig });
     } catch (err) {

@@ -14,6 +14,14 @@ export const scenarioMetaSchema = z.object({
   description: z.string().optional(),
   /** Base URL or {{ENV_VAR}} placeholder resolved from an environment profile. */
   baseUrl: z.string().optional(),
+  /**
+   * Stable unique id (kebab-case). Optional in the schema — older exported
+   * files and hand-authored fixtures never had one — but the extension
+   * always fills it in on save/export (slugified from name, editable) and
+   * uses it, not `name`, to dedupe the library. A scenario without one is
+   * matched by a name-derived slug at runtime (see import-export.ts).
+   */
+  slug: z.string().optional(),
   tags: z.array(z.string()).default([]),
   sessionMarker: assertionSchema.optional(),
 });

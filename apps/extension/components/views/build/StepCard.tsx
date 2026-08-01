@@ -99,10 +99,16 @@ export default function StepCard(props: Props) {
           {/* Wait step details */}
           {step.action === 'wait' && (
             <FieldGroup>
-              {step.durationMs !== undefined && (
+              {!step.forSelector && (
+                // Gated on `!forSelector` (which mode this wait step is in),
+                // not on `durationMs !== undefined` — the old condition tied
+                // the field's visibility to the very value it edits, so
+                // clearing the number to '' set durationMs to undefined
+                // (`Number('') || undefined`), which then hid the input
+                // entirely with no way to type a new value back in.
                 <InlineInput
                   label="Duration (ms)"
-                  value={String(step.durationMs)}
+                  value={step.durationMs !== undefined ? String(step.durationMs) : ''}
                   onChange={(v) => onUpdate({ durationMs: Number(v) || undefined } as Partial<Step>)}
                 />
               )}
