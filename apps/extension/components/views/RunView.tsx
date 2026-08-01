@@ -16,6 +16,20 @@ import OnboardingWizard from '@/components/OnboardingWizard';
 import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
 import { getUiPrefs, setUiPref } from '@/lib/ui-prefs';
+import {
+  IconAlert,
+  IconCheck,
+  IconCode,
+  IconCross,
+  IconDownload,
+  IconEdit,
+  IconGlobe,
+  IconLayers,
+  IconPlay,
+  IconSquare,
+  IconTrash,
+  IconUpload,
+} from '@/components/ui/icons';
 
 export interface RunViewProps {
   /** Switch to Build view and load this scenario's steps + meta for editing. */
@@ -32,16 +46,7 @@ export default function RunView({ onEdit }: RunViewProps) {
   const [runReport, setRunReport] = useState<RunReport | null>(null);
   const [reportAdvanced, setReportAdvanced] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
-  // Live "which step is running" progress (currentStepIndex/totalSteps from
-  // the runner session) — updated on every 'playing' broadcast, not just the
-  // terminal done/error one, so the UI reflects mid-run progress instead of
-  // just "Running…" with no indication of where the run actually is.
   const [stepProgress, setStepProgress] = useState<{ index: number; total: number } | null>(null);
-  // background sends the final 'state' (done/error) broadcast, which nulls
-  // runTabId, *before* the run-report broadcast for the same run. If React
-  // re-renders (applying that null) before run-report arrives, matching on
-  // the `runTabId` state below would drop the report. A ref sidesteps the
-  // React re-render race: it's updated synchronously, not on next render.
   const runTabIdRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
@@ -53,12 +58,6 @@ export default function RunView({ onEdit }: RunViewProps) {
     void refresh();
   }, [refresh]);
 
-  // Restore the last Base URL override the PO typed — without this, a plain
-  // useState resets to '' every time the popup/side panel closes and
-  // reopens, forcing a retype on every session (the exact complaint this
-  // fixes: a scenario-authored default via meta.baseUrl already covers the
-  // "PO never has to touch this" case; this covers "PO needs a different
-  // one and shouldn't have to retype it constantly").
   useEffect(() => {
     void getUiPrefs().then((prefs) => setBaseUrl(prefs.runBaseUrl));
   }, []);
@@ -68,16 +67,9 @@ export default function RunView({ onEdit }: RunViewProps) {
     void setUiPref('runBaseUrl', value);
   }, []);
 
-  // Re-enable the Run button when the background reports the run ended —
-  // without this it stays on "Running…" forever.
   useEffect(() => {
     const handler = (msg: unknown) => {
       const m = msg as RunnerStateMessage | RunnerRunReportMessage | RunnerSuiteStateMessage;
-      // While a suite is running, every scenario inside it broadcasts its own
-      // 'done'/'error' state on this same tab — the single-run branch below
-      // must ignore those, or it clears runTabId after the *first* scenario
-      // and the final suite-state broadcast (which checks tabId === runTabId)
-      // never matches, leaving "Running…" stuck forever.
       if (m.type === 'aitomate:runner:state' && m.tabId === runTabId && !suiteRunning) {
         if (m.state.status === 'done' || m.state.status === 'error' || m.state.status === 'idle') {
           setRunningId(null);
@@ -87,9 +79,6 @@ export default function RunView({ onEdit }: RunViewProps) {
           }
         }
       }
-      // Live step progress — matched via the ref (not the runTabId state) so
-      // it keeps updating during a suite run too, same reasoning as the
-      // run-report match above: state updates lag a render behind the ref.
       if (m.type === 'aitomate:runner:state' && m.tabId === runTabIdRef.current) {
         if (m.state.status === 'playing' || m.state.status === 'paused') {
           setStepProgress({ index: m.state.currentStepIndex, total: m.state.totalSteps });
@@ -124,9 +113,6 @@ export default function RunView({ onEdit }: RunViewProps) {
         setImportError(result.error);
         return;
       }
-      // Deduped by slug, not a blind insert — importing the same file (or a
-      // different file that happens to share a slug) twice must not create
-      // a silent duplicate in the library.
       const saved = await saveScenarioDeduped(result.scenario, (existingName) =>
         window.confirm(
           `A scenario with the same slug already exists ("${existingName}"). Overwrite it?`,
@@ -157,7 +143,6 @@ export default function RunView({ onEdit }: RunViewProps) {
         }
         setRunTabId(tab.id);
         runTabIdRef.current = tab.id;
-        // Fire and forget — the runner loop runs in the background.
         await browser.runtime.sendMessage({
           type: 'aitomate:runner:play',
           tabId: tab.id,
@@ -172,6 +157,23 @@ export default function RunView({ onEdit }: RunViewProps) {
     },
     [baseUrl],
   );
+
+  const handleStopRun = useCallback(async () => {
+    const tabId = runTabIdRef.current ?? runTabId;
+    if (!tabId) return;
+    try {
+      await browser.runtime.sendMessage({
+        type: 'aitomate:runner:stop',
+        tabId,
+      } as RunnerCommand);
+    } catch (err) {
+      console.warn('[aitomate] could not stop runner', err);
+    } finally {
+      setRunningId(null);
+      setRunTabId(null);
+      setStepProgress(null);
+    }
+  }, [runTabId]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -208,11 +210,21 @@ export default function RunView({ onEdit }: RunViewProps) {
   }, [scenarios, baseUrl]);
 
   const handleStopSuite = useCallback(async () => {
-    if (!runTabId) return;
-    await browser.runtime.sendMessage({
-      type: 'aitomate:runner:stop-suite',
-      tabId: runTabId,
-    } as RunnerCommand);
+    const tabId = runTabIdRef.current ?? runTabId;
+    if (!tabId) return;
+    try {
+      await browser.runtime.sendMessage({
+        type: 'aitomate:runner:stop-suite',
+        tabId,
+      } as RunnerCommand);
+    } catch (err) {
+      console.warn('[aitomate] could not stop suite runner', err);
+    } finally {
+      setSuiteRunning(false);
+      setRunningId(null);
+      setRunTabId(null);
+      setStepProgress(null);
+    }
   }, [runTabId]);
 
   const handleExportSuite = useCallback(() => {
@@ -221,271 +233,474 @@ export default function RunView({ onEdit }: RunViewProps) {
     downloadBlob(blob, 'aitomate-suite.zip');
   }, [scenarios]);
 
-  // The wizard can save a scenario mid-onboarding (`saveScenario`, bypassing
-  // this view's own import flow) — refresh so it shows up in the list
-  // without waiting for the popup to reopen.
   const handleOnboardingComplete = useCallback(() => {
     void refresh();
   }, [refresh]);
 
+  const runningScenario = scenarios.find((s) => s.id === runningId);
+
   return (
     <>
       <OnboardingWizard onComplete={handleOnboardingComplete} />
-    <section>
-      <p style={{ fontSize: 13, color: '#555', margin: '0 0 12px' }}>
-        Import a scenario and run it — no setup needed for static-only
-        scenarios.
-      </p>
+      <section>
+        {/* Top Action Bar */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button
+            onClick={handleImport}
+            disabled={runningId !== null || suiteRunning}
+            className="ait-btn ait-btn-primary"
+            style={{ flex: 1, padding: '8px 14px' }}
+          >
+            <IconUpload size={14} />
+            <span>Import Scenario</span>
+          </button>
 
-      <button onClick={handleImport} style={btnStyle}>
-        Import scenario…
-      </button>
-
-      {importError && (
-        <p style={{ fontSize: 11, color: '#c33', marginTop: 8 }}>{importError}</p>
-      )}
-
-      <div style={{ marginTop: 12 }}>
-        <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Base URL</label>
-        <p style={{ fontSize: 10, color: '#999', margin: '2px 0 4px' }}>
-          Optional — resolves {'{{BASE_URL}}'} placeholders. Leave blank to use a
-          scenario's own saved Base URL, if it has one.
-        </p>
-        <input
-          value={baseUrl}
-          onChange={(e) => handleBaseUrlChange(e.target.value)}
-          placeholder="e.g. http://localhost:8080"
-          style={{
-            display: 'block', width: '100%', marginTop: 4, padding: '6px 8px',
-            fontSize: 12, border: '1px solid #ccc', borderRadius: 4, boxSizing: 'border-box',
-          }}
-        />
-      </div>
-
-      {scenarios.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          {scenarios.map((entry) => (
-            <div
-              key={entry.id}
-              style={{
-                padding: '8px 10px',
-                marginBottom: 6,
-                border: '1px solid #e0e0e0',
-                borderRadius: 8,
-                background: '#fafafa',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, flex: 1, color: '#333' }}>
-                  {entry.name}
-                  {entry.scenario.meta.baseUrl && !baseUrl && (
-                    <span style={{ fontSize: 10, color: '#999', marginLeft: 6 }}>
-                      (uses saved Base URL: {entry.scenario.meta.baseUrl})
-                    </span>
-                  )}
-                </span>
-                <span style={{ fontSize: 10, color: '#999', whiteSpace: 'nowrap' }}>
-                  {entry.scenario.steps.length} step
-                  {entry.scenario.steps.length === 1 ? '' : 's'}
-                </span>
-                <button
-                  onClick={() => handleRun(entry)}
-                  disabled={runningId === entry.id}
-                  style={{
-                    fontSize: 11,
-                    padding: '3px 10px',
-                    border: 'none',
-                    borderRadius: 4,
-                    background: runningId === entry.id ? '#ccc' : '#1a1a1a',
-                    color: '#fff',
-                    cursor: runningId === entry.id ? 'default' : 'pointer',
-                  }}
-                >
-                  {runningId === entry.id
-                    ? stepProgress
-                      ? `Step ${stepProgress.index + 1}/${stepProgress.total}`
-                      : 'Running…'
-                    : 'Run'}
-                </button>
-                <button
-                  onClick={() => onEdit?.(entry.id)}
-                  disabled={runningId === entry.id}
-                  title="Load into Build view to edit"
-                  style={{
-                    fontSize: 11,
-                    padding: '3px 7px',
-                    border: '1px solid #ddd',
-                    borderRadius: 4,
-                    background: '#fff',
-                    color: '#333',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(entry.id)}
-                  disabled={runningId === entry.id}
-                  style={{
-                    fontSize: 11,
-                    padding: '3px 7px',
-                    border: '1px solid #ddd',
-                    borderRadius: 4,
-                    background: '#fff',
-                    color: '#c33',
-                    cursor: 'pointer',
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-              {runningId === entry.id && stepProgress && (
-                <p style={{ fontSize: 10, color: '#666', margin: '4px 0 0' }}>
-                  Running step {stepProgress.index + 1} of {stepProgress.total}
-                  {entry.scenario.steps[stepProgress.index] && (
-                    <>: {entry.scenario.steps[stepProgress.index].action} ({entry.scenario.steps[stepProgress.index].id})</>
-                  )}
-                </p>
-              )}
-            </div>
-          ))}
           {scenarios.length > 1 && (
-            <>
-              <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'center' }}>
-                <button
-                  onClick={suiteRunning ? handleStopSuite : handleRunAll}
-                  style={{
-                    ...btnStyle,
-                    background: suiteRunning ? '#c33' : '#1a1a1a',
-                    color: '#fff',
-                    border: 'none',
-                  }}
-                >
-                  {suiteRunning ? 'Stop suite' : 'Run all'}
-                </button>
-                <button onClick={handleExportSuite} disabled={suiteRunning} style={btnStyle}>
-                  Export suite ({scenarios.length})
-                </button>
-              </div>
-
-              {suiteRunning && stepProgress && (
-                <p style={{ fontSize: 10, color: '#666', textAlign: 'center', margin: '6px 0 0' }}>
-                  Running step {stepProgress.index + 1} of {stepProgress.total} in the current scenario
-                </p>
-              )}
-
-              {suiteReport && (
-                <div style={{ marginTop: 12, padding: 10, background: '#f5f5f5', borderRadius: 8, fontSize: 12 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                    Suite {suiteReport.passed ? 'passed' : 'failed'}
-                    <span style={{ fontWeight: 400, color: '#777', marginLeft: 6 }}>
-                      ({suiteReport.scenarios.filter((s) => s.status === 'passed').length}/
-                      {suiteReport.scenarios.length} passed)
-                    </span>
-                  </div>
-                  {suiteReport.scenarios.map((sc, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
-                      <span style={{
-                        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                        background: sc.status === 'passed' ? '#2e7d32' : sc.status === 'failed' ? '#d32f2f' : '#ccc',
-                      }} />
-                      <span style={{ flex: 1, color: '#333' }}>{sc.name}</span>
-                      <span style={{ fontSize: 10, color: sc.status === 'failed' ? '#d32f2f' : '#777' }}>
-                        {sc.status === 'failed' ? (sc.error ?? 'failed') : sc.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
+            <button
+              onClick={suiteRunning ? handleStopSuite : handleRunAll}
+              className={`ait-btn ${suiteRunning ? 'ait-btn-danger' : 'ait-btn-secondary'}`}
+              style={{ padding: '8px 14px' }}
+            >
+              {suiteRunning ? <IconSquare size={13} color="#fff" /> : <IconPlay size={13} color="var(--accent-primary)" />}
+              <span>{suiteRunning ? 'Stop Suite' : 'Run Suite'}</span>
+            </button>
           )}
         </div>
-      )}
 
-      {runReport && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{
-            padding: '10px 12px', borderRadius: 8, fontSize: 13,
-            background: runReport.passed ? '#e8f5e9' : '#fce4ec',
-            border: `1px solid ${runReport.passed ? '#c8e6c9' : '#f5c6cb'}`,
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              {runReport.passed ? 'Passed' : 'Failed'}
-              <span style={{ fontWeight: 400, color: '#777', marginLeft: 8, fontSize: 11 }}>
-                {runReport.durationMs}ms &middot; {runReport.steps.length} step{runReport.steps.length === 1 ? '' : 's'}
+        {/* Global Active Execution Banner when a single scenario is running */}
+        {runningId && runningScenario && (
+          <div
+            className="ait-card animate-fade-in"
+            style={{
+              padding: '12px 14px',
+              marginBottom: 14,
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(19, 25, 36, 0.95) 100%)',
+              borderColor: 'rgba(99, 102, 241, 0.4)',
+              boxShadow: 'var(--accent-glow)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: '#6366f1',
+                    boxShadow: '0 0 10px #6366f1',
+                    display: 'inline-block',
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Running: {runningScenario.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                    {stepProgress
+                      ? `Executing step ${stepProgress.index + 1} of ${stepProgress.total}`
+                      : 'Initializing test execution...'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleStopRun}
+                className="ait-btn ait-btn-danger ait-btn-sm"
+                style={{ padding: '5px 12px', flexShrink: 0 }}
+              >
+                <IconSquare size={12} color="#fff" />
+                <span>Stop Test</span>
+              </button>
+            </div>
+
+            {stepProgress && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ height: 4, background: 'rgba(255, 255, 255, 0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${((stepProgress.index + 1) / stepProgress.total) * 100}%`,
+                      background: 'var(--accent-gradient)',
+                      transition: 'width 0.3s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {importError && (
+          <div
+            style={{
+              padding: '8px 12px',
+              background: 'var(--status-error-bg)',
+              border: '1px solid var(--status-error-border)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--status-error)',
+              fontSize: 11,
+              marginBottom: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <IconAlert size={14} color="var(--status-error)" />
+            <span>{importError}</span>
+          </div>
+        )}
+
+        {/* Base URL Configuration Bar */}
+        <div
+          className="ait-card"
+          style={{ padding: '10px 12px', marginBottom: 14, background: 'var(--bg-surface)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <IconGlobe size={13} color="var(--accent-primary)" />
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>Target Base URL</span>
+          </div>
+          <input
+            value={baseUrl}
+            onChange={(e) => handleBaseUrlChange(e.target.value)}
+            placeholder="e.g. http://localhost:8080 (resolves {{BASE_URL}})"
+            className="ait-input"
+            style={{ fontSize: 11, padding: '5px 8px' }}
+          />
+        </div>
+
+        {/* Scenarios List */}
+        {scenarios.length === 0 ? (
+          <div
+            className="ait-card"
+            style={{
+              textAlign: 'center',
+              padding: '32px 16px',
+              background: 'var(--bg-surface)',
+              borderStyle: 'dashed',
+            }}
+          >
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: '50%',
+                background: 'rgba(99, 102, 241, 0.12)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 10,
+                color: 'var(--accent-primary)',
+              }}
+            >
+              <IconLayers size={20} />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+              No scenario loaded yet
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 260, margin: '0 auto 14px' }}>
+              Import an existing <code>.aitomate.json</code> scenario or switch to the Build view to record a new test script.
+            </div>
+            <button onClick={handleImport} className="ait-btn ait-btn-primary ait-btn-sm">
+              <IconUpload size={12} />
+              <span>Import File</span>
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+                padding: '0 2px',
+              }}
+            >
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Test Library ({scenarios.length})
+              </span>
+              {scenarios.length > 1 && (
+                <button
+                  onClick={handleExportSuite}
+                  disabled={suiteRunning || runningId !== null}
+                  className="ait-btn ait-btn-ghost ait-btn-sm"
+                  style={{ fontSize: 10, padding: '2px 6px' }}
+                >
+                  <IconDownload size={11} />
+                  <span>Export Suite ZIP</span>
+                </button>
+              )}
+            </div>
+
+            {scenarios.map((entry) => {
+              const isRunning = runningId === entry.id;
+              return (
+                <div
+                  key={entry.id}
+                  className="ait-card animate-fade-in"
+                  style={{
+                    padding: '10px 12px',
+                    marginBottom: 8,
+                    background: isRunning ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface)',
+                    borderColor: isRunning ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.name}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                        <span className="ait-badge ait-badge-primary">
+                          {entry.scenario.steps.length} steps
+                        </span>
+
+                        {entry.scenario.setup?.scenarioRef && (
+                          <span className="ait-badge ait-badge-warning">
+                            Setup: {entry.scenario.setup.scenarioRef}
+                          </span>
+                        )}
+
+                        {entry.scenario.meta.baseUrl && !baseUrl && (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            URL: {entry.scenario.meta.baseUrl}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                      {isRunning ? (
+                        <button
+                          onClick={handleStopRun}
+                          className="ait-btn ait-btn-danger ait-btn-sm"
+                          style={{ padding: '4px 10px' }}
+                          title="Stop this running test scenario"
+                        >
+                          <IconSquare size={11} color="#fff" />
+                          <span>Stop</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleRun(entry)}
+                          disabled={suiteRunning || (runningId !== null && runningId !== entry.id)}
+                          className="ait-btn ait-btn-primary ait-btn-sm"
+                          style={{ padding: '4px 10px' }}
+                        >
+                          <IconPlay size={11} fill="#fff" />
+                          <span>Run</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => onEdit?.(entry.id)}
+                        disabled={isRunning || suiteRunning}
+                        className="ait-btn ait-btn-secondary ait-btn-icon"
+                        title="Edit in Build view"
+                      >
+                        <IconEdit size={12} color="var(--text-secondary)" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDelete(entry.id)}
+                        disabled={isRunning || suiteRunning}
+                        className="ait-btn ait-btn-secondary ait-btn-icon"
+                        title="Delete scenario"
+                        style={{ color: 'var(--status-error)' }}
+                      >
+                        <IconTrash size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Active Step Progress Indicator */}
+                  {isRunning && stepProgress && (
+                    <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--accent-primary)', marginBottom: 3 }}>
+                        <span>Running Step {stepProgress.index + 1} of {stepProgress.total}</span>
+                        <span>{Math.round(((stepProgress.index + 1) / stepProgress.total) * 100)}%</span>
+                      </div>
+                      <div style={{ height: 4, background: 'rgba(255, 255, 255, 0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${((stepProgress.index + 1) / stepProgress.total) * 100}%`,
+                            background: 'var(--accent-gradient)',
+                            transition: 'width 0.3s ease',
+                          }}
+                        />
+                      </div>
+                      {entry.scenario.steps[stepProgress.index] && (
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
+                          Action: <code style={{ color: '#a5b4fc' }}>{entry.scenario.steps[stepProgress.index].action}</code>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Suite Report Card */}
+        {suiteReport && (
+          <div
+            className="ait-card animate-fade-in"
+            style={{
+              marginTop: 14,
+              padding: 12,
+              background: 'var(--bg-surface)',
+              borderLeft: `3px solid ${suiteReport.passed ? 'var(--status-success)' : 'var(--status-error)'}`,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: suiteReport.passed ? 'var(--status-success)' : 'var(--status-error)' }}>
+                Suite {suiteReport.passed ? 'Passed ✓' : 'Failed ✕'}
+              </span>
+              <span className="ait-badge ait-badge-muted">
+                {suiteReport.scenarios.filter((s) => s.status === 'passed').length} / {suiteReport.scenarios.length} Passed
               </span>
             </div>
-          </div>
 
-          <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-            <button onClick={() => downloadReport(runReport, 'json')} style={smallBtnStyle}>
-              Export JSON
-            </button>
-            <button onClick={() => downloadReport(runReport, 'html')} style={smallBtnStyle}>
-              Export HTML
-            </button>
-          </div>
-
-          <div style={{ marginTop: 8 }}>
-            <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: '#777', cursor: 'pointer' }}>
-              <input type="checkbox" checked={reportAdvanced} onChange={(e) => setReportAdvanced(e.target.checked)} />
-              Advanced
-            </label>
-          </div>
-
-          <div style={{ marginTop: 8, fontSize: 12 }}>
-            {runReport.steps.map((s, i) => (
-              <div key={s.stepId} style={{
-                padding: '8px 10px', marginBottom: 4,
-                border: '1px solid #e0e0e0', borderRadius: 6,
-                background: s.status === 'passed' ? '#f1f8e9' : s.status === 'failed' ? '#fff3e0' : '#fafafa',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: s.status === 'passed' ? '#2e7d32' : s.status === 'failed' ? '#d32f2f' : '#ccc',
-                  }} />
-                  <span style={{ flex: 1, color: '#333' }}>Step {i + 1}: {s.action}</span>
-                  <span style={{ fontSize: 10, color: '#999' }}>
-                    {s.status === 'passed' && `${s.durationMs}ms`}
-                    {s.status === 'failed' && 'Failed'}
-                    {s.status === 'skipped' && 'Skipped'}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {suiteReport.scenarios.map((sc, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '4px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(255,255,255,0.03)',
+                    fontSize: 11,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: sc.status === 'passed' ? 'var(--status-success)' : 'var(--status-error)',
+                      }}
+                    />
+                    <span style={{ color: 'var(--text-primary)' }}>{sc.name}</span>
+                  </div>
+                  <span style={{ fontSize: 10, color: sc.status === 'passed' ? 'var(--status-success)' : 'var(--status-error)' }}>
+                    {sc.status}
                   </span>
                 </div>
-                {reportAdvanced && (
-                  <div style={{ marginTop: 6, fontSize: 11, color: '#555', lineHeight: 1.5 }}>
-                    <div>stepId: {s.stepId}</div>
-                    <div>action: {s.action}</div>
-                    <div>status: {s.status}</div>
-                    {s.error && <div style={{ color: '#d32f2f' }}>error: {s.error}</div>}
-                    {s.attempts !== undefined && <div>attempts: {s.attempts}</div>}
-                    {s.durationMs !== undefined && <div>durationMs: {s.durationMs}</div>}
-                  </div>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-    </section>
+        )}
+
+        {/* Individual Run Report Card */}
+        {runReport && (
+          <div
+            className="ait-card animate-fade-in"
+            style={{
+              marginTop: 14,
+              padding: 12,
+              background: 'var(--bg-surface)',
+              borderLeft: `3px solid ${runReport.passed ? 'var(--status-success)' : 'var(--status-error)'}`,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  className={`ait-badge ${runReport.passed ? 'ait-badge-success' : 'ait-badge-error'}`}
+                  style={{ fontSize: 11, padding: '3px 8px' }}
+                >
+                  {runReport.passed ? 'PASSED ✓' : 'FAILED ✕'}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {runReport.durationMs}ms &middot; {runReport.steps.length} steps
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  onClick={() => downloadReport(runReport, 'json')}
+                  className="ait-btn ait-btn-secondary ait-btn-sm"
+                  style={{ fontSize: 10, padding: '2px 6px' }}
+                >
+                  <IconDownload size={10} />
+                  <span>JSON</span>
+                </button>
+                <button
+                  onClick={() => downloadReport(runReport, 'html')}
+                  className="ait-btn ait-btn-secondary ait-btn-sm"
+                  style={{ fontSize: 10, padding: '2px 6px' }}
+                >
+                  <IconDownload size={10} />
+                  <span>HTML Report</span>
+                </button>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={reportAdvanced}
+                  onChange={(e) => setReportAdvanced(e.target.checked)}
+                />
+                Show Advanced Step Diagnostics
+              </label>
+            </div>
+
+            {/* Step Results */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {runReport.steps.map((s, i) => (
+                <div
+                  key={s.stepId}
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: 11,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: s.status === 'passed' ? 'var(--status-success)' : s.status === 'failed' ? 'var(--status-error)' : 'var(--text-muted)',
+                        }}
+                      />
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                        Step {i + 1}: <code style={{ color: '#a5b4fc' }}>{s.action}</code>
+                      </span>
+                    </div>
+
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      {s.status === 'passed' && `${s.durationMs}ms`}
+                      {s.status === 'failed' && <strong style={{ color: 'var(--status-error)' }}>Failed</strong>}
+                      {s.status === 'skipped' && 'Skipped'}
+                    </span>
+                  </div>
+
+                  {reportAdvanced && (
+                    <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px dashed var(--border-subtle)', fontSize: 10, color: 'var(--text-muted)' }}>
+                      <div>ID: {s.stepId}</div>
+                      {s.error && <div style={{ color: 'var(--status-error)', marginTop: 2 }}>Error: {s.error}</div>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
     </>
   );
 }
-
-const btnStyle: React.CSSProperties = {
-  fontSize: 13,
-  padding: '6px 12px',
-  border: '1px solid #ccc',
-  borderRadius: 6,
-  background: '#fff',
-  cursor: 'pointer',
-};
-
-const smallBtnStyle: React.CSSProperties = {
-  fontSize: 11,
-  padding: '4px 10px',
-  border: '1px solid #ccc',
-  borderRadius: 4,
-  background: '#fff',
-  cursor: 'pointer',
-};

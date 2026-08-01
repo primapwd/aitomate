@@ -4,61 +4,22 @@ import { vault, type VaultStatus } from '@/lib/vault';
 import { getLlmSettings, setLlmSettings } from '@/lib/runner/llm/settings';
 import { isDebugEnabled, setDebugEnabled } from '@/lib/debug';
 import type { VaultCommand, VaultResponse } from '@/lib/vault/messages';
-
-// ── Shared inline styles (consistent with AppShell) ──
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '6px 8px',
-  border: '1px solid #ccc',
-  borderRadius: 6,
-  fontSize: 13,
-  boxSizing: 'border-box',
-  marginTop: 4,
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 12,
-  fontWeight: 600,
-  color: '#444',
-  marginTop: 12,
-};
-
-const sectionBox: React.CSSProperties = {
-  marginBottom: 16,
-  padding: 12,
-  background: '#f5f5f5',
-  borderRadius: 8,
-};
-
-const btnBase: React.CSSProperties = {
-  padding: '6px 16px',
-  border: 'none',
-  borderRadius: 6,
-  fontSize: 13,
-  cursor: 'pointer',
-  fontWeight: 600,
-};
-
-const primaryBtn: React.CSSProperties = { ...btnBase, background: '#1a1a1a', color: '#fff' };
-const secondaryBtn: React.CSSProperties = { ...btnBase, background: '#e5e5e5', color: '#333' };
-const dangerBtn: React.CSSProperties = { ...btnBase, background: '#ffebee', color: '#d32f2f' };
-
-function statusColor(s: VaultStatus | 'loading'): string {
-  if (s === 'unlocked') return '#2e7d32';
-  if (s === 'locked') return '#f57c00';
-  return '#777';
-}
-
-function statusLabel(s: VaultStatus | 'loading'): string {
-  if (s === 'loading') return '…';
-  return s;
-}
+import {
+  IconAlert,
+  IconCheck,
+  IconEye,
+  IconEyeOff,
+  IconLock,
+  IconSave,
+  IconShield,
+  IconUnlock,
+  IconWand,
+  IconZap,
+} from '@/components/ui/icons';
 
 async function sendVaultCommand(cmd: VaultCommand): Promise<VaultResponse> {
   try {
-    return await browser.runtime.sendMessage(cmd) as VaultResponse;
+    return (await browser.runtime.sendMessage(cmd)) as VaultResponse;
   } catch {
     return { ok: false, error: 'Could not reach the background service worker.' };
   }
@@ -74,6 +35,7 @@ export default function SettingsView() {
   const [passphrase, setPassphrase] = useState('');
   const [newPassphrase, setNewPassphrase] = useState('');
   const [confirmPassphrase, setConfirmPassphrase] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   // Debug
   const [debugEnabled, setDebugEnabled_] = useState(false);
@@ -226,165 +188,259 @@ export default function SettingsView() {
 
   return (
     <section>
-      <h2 style={{ fontSize: 16, margin: '0 0 8px', fontWeight: 600 }}>Settings</h2>
-
       {error && (
-        <p style={{ fontSize: 12, color: '#d32f2f', background: '#ffebee', padding: '6px 10px', borderRadius: 6 }}>
-          {error}
-        </p>
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'var(--status-error-bg)',
+            border: '1px solid var(--status-error-border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--status-error)',
+            fontSize: 11,
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <IconAlert size={14} color="var(--status-error)" />
+          <span>{error}</span>
+        </div>
       )}
+
       {success && (
-        <p style={{ fontSize: 12, color: '#2e7d32', background: '#e8f5e9', padding: '6px 10px', borderRadius: 6 }}>
-          {success}
-        </p>
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'var(--status-success-bg)',
+            border: '1px solid var(--status-success-border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--status-success)',
+            fontSize: 11,
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <IconCheck size={14} color="var(--status-success)" />
+          <span>{success}</span>
+        </div>
       )}
 
       {/* ── Vault section ── */}
-      <div style={sectionBox}>
-        <h3 style={{ fontSize: 13, margin: '0 0 8px', fontWeight: 600 }}>
-          Secure Vault
-          <span style={{ marginLeft: 8, fontSize: 11, color: statusColor(vaultStatus) }}>
-            ({statusLabel(vaultStatus)})
+      <div className="ait-card" style={{ background: 'var(--bg-surface)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <IconShield size={16} color="var(--accent-primary)" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Encrypted Vault</span>
+          </div>
+
+          <span
+            className={`ait-badge ${
+              vaultStatus === 'unlocked'
+                ? 'ait-badge-success'
+                : vaultStatus === 'locked'
+                  ? 'ait-badge-warning'
+                  : 'ait-badge-muted'
+            }`}
+          >
+            {vaultStatus === 'unlocked' ? (
+              <>
+                <IconUnlock size={10} /> Unlocked
+              </>
+            ) : vaultStatus === 'locked' ? (
+              <>
+                <IconLock size={10} /> Locked
+              </>
+            ) : (
+              'Uninitialized'
+            )}
           </span>
-        </h3>
+        </div>
 
         {vaultStatus === 'uninitialized' && (
-          <>
-            <p style={{ fontSize: 12, color: '#555', margin: '0 0 8px' }}>
-              Set a passphrase to create an encrypted vault for your API keys.
+          <div style={{ marginTop: 8 }}>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 8px' }}>
+              Create an AES-256 encrypted vault to securely store your LLM API keys on your machine.
             </p>
-            <label style={labelStyle}>
-              New passphrase
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <input
                 type="password"
                 value={newPassphrase}
                 onChange={(e) => setNewPassphrase(e.target.value)}
-                style={inputStyle}
+                placeholder="New vault passphrase (min 8 chars)"
+                className="ait-input"
               />
-            </label>
-            <label style={labelStyle}>
-              Confirm passphrase
               <input
                 type="password"
                 value={confirmPassphrase}
                 onChange={(e) => setConfirmPassphrase(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleInitialize()}
-                style={inputStyle}
+                placeholder="Confirm passphrase"
+                className="ait-input"
               />
-            </label>
-            <button onClick={handleInitialize} style={{ ...primaryBtn, marginTop: 12 }}>
-              Create vault
-            </button>
-          </>
+              <button
+                onClick={handleInitialize}
+                className="ait-btn ait-btn-primary ait-btn-sm"
+                style={{ marginTop: 4 }}
+              >
+                <IconShield size={12} />
+                <span>Initialize Vault</span>
+              </button>
+            </div>
+          </div>
         )}
 
         {vaultStatus === 'locked' && (
-          <>
-            <p style={{ fontSize: 12, color: '#555', margin: '0 0 8px' }}>
-              Enter your passphrase to unlock the vault.
+          <div style={{ marginTop: 8 }}>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '0 0 8px' }}>
+              Enter your master passphrase to unlock API key access.
             </p>
-            <label style={labelStyle}>
-              Passphrase
+            <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type="password"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
-                style={inputStyle}
+                placeholder="Passphrase"
+                className="ait-input"
+                style={{ flex: 1 }}
               />
-            </label>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button onClick={handleUnlock} style={primaryBtn}>Unlock</button>
-              <button onClick={handleReset} style={dangerBtn}>Reset vault</button>
+              <button onClick={handleUnlock} className="ait-btn ait-btn-primary ait-btn-sm">
+                Unlock
+              </button>
+              <button onClick={handleReset} className="ait-btn ait-btn-danger ait-btn-sm">
+                Reset
+              </button>
             </div>
-          </>
+          </div>
         )}
 
         {vaultStatus === 'unlocked' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#2e7d32' }}>Unlocked.</span>
-            <button onClick={handleLock} style={{ ...secondaryBtn, padding: '2px 8px', fontSize: 11 }}>
-              Lock
-            </button>
-            <button onClick={handleReset} style={{ ...dangerBtn, padding: '2px 8px', fontSize: 11 }}>
-              Reset
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--status-success)' }}>
+              Vault is unlocked and ready for AI requests.
+            </span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={handleLock} className="ait-btn ait-btn-secondary ait-btn-sm">
+                <IconLock size={11} />
+                <span>Lock</span>
+              </button>
+              <button onClick={handleReset} className="ait-btn ait-btn-danger ait-btn-sm">
+                Reset
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* ── AI Provider section ── */}
-      <h3 style={{ fontSize: 13, margin: '0 0 8px', fontWeight: 600 }}>AI Provider</h3>
+      <div className="ait-card" style={{ background: 'var(--bg-surface)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+          <IconWand size={16} color="var(--accent-secondary)" />
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>LLM Provider Settings</span>
+        </div>
 
-      <label style={labelStyle}>
-        Provider
-        <select
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as 'openai' | 'anthropic')}
-          style={inputStyle}
-        >
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic</option>
-        </select>
-      </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>PROVIDER ADAPTER</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as 'openai' | 'anthropic')}
+              className="ait-select"
+              style={{ marginTop: 2 }}
+            >
+              <option value="openai">OpenAI-compatible (OpenAI, LM Studio, Ollama, OpenRouter)</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+            </select>
+          </div>
 
-      <label style={labelStyle}>
-        Base URL
-        <input
-          type="url"
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder={provider === 'openai' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com/v1'}
-          style={inputStyle}
-        />
-      </label>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>BASE URL</label>
+            <input
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={provider === 'openai' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com/v1'}
+              className="ait-input"
+              style={{ marginTop: 2 }}
+            />
+          </div>
 
-      <label style={labelStyle}>
-        Model
-        <input
-          type="text"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder={provider === 'openai' ? 'gpt-4o-mini' : 'claude-sonnet-4-20250514'}
-          style={inputStyle}
-        />
-      </label>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>MODEL NAME</label>
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-sonnet-20241022'}
+              className="ait-input"
+              style={{ marginTop: 2 }}
+            />
+          </div>
 
-      <label style={labelStyle}>
-        Reasoning effort
-        <select
-          value={reasoningEffort}
-          onChange={(e) => setReasoningEffort(e.target.value as '' | 'low' | 'medium' | 'high')}
-          style={inputStyle}
-        >
-          <option value="">Off</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
-      </label>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>REASONING EFFORT</label>
+            <select
+              value={reasoningEffort}
+              onChange={(e) => setReasoningEffort(e.target.value as '' | 'low' | 'medium' | 'high')}
+              className="ait-select"
+              style={{ marginTop: 2 }}
+            >
+              <option value="">Off / Default</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
 
-      {vaultStatus === 'unlocked' ? (
-        <label style={labelStyle}>
-          API Key
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-…"
-            style={inputStyle}
-          />
-        </label>
-      ) : (
-        <p style={{ fontSize: 12, color: '#f57c00', marginTop: 12 }}>
-          Unlock the vault above to set an API key.
-        </p>
-      )}
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>API KEY (VAULT STORED)</label>
+            {vaultStatus === 'unlocked' ? (
+              <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="ait-input"
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="ait-btn ait-btn-secondary ait-btn-icon"
+                >
+                  {showApiKey ? <IconEyeOff size={13} /> : <IconEye size={13} />}
+                </button>
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--status-warning)',
+                  background: 'var(--status-warning-bg)',
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  marginTop: 2,
+                }}
+              >
+                Unlock vault above to view or set API key.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* ── Debug section ── */}
-      <div style={{ ...sectionBox, marginTop: 20 }}>
-        <h3 style={{ fontSize: 13, margin: '0 0 8px', fontWeight: 600 }}>Debug</h3>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+      <div className="ait-card" style={{ background: 'var(--bg-surface)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <IconZap size={15} color="var(--status-info)" />
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Debug & Diagnostics</span>
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)' }}>
           <input
             type="checkbox"
             checked={debugEnabled}
@@ -393,22 +449,23 @@ export default function SettingsView() {
               setDebugEnabled_(on);
               await setDebugEnabled(on);
             }}
-            style={{ margin: 0 }}
           />
-          Verbose logging (console)
+          Enable Verbose Extension Console Logging
         </label>
-        <p style={{ fontSize: 11, color: '#777', margin: '4px 0 0' }}>
-          Logs state machine transitions, step execution, and vault operations
-          to the browser console. Restart the service worker to apply.
-        </p>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, paddingLeft: 22 }}>
+          Logs state machine broadcasts, selector lookups, and vault actions to browser dev console.
+        </div>
       </div>
 
+      {/* Save Button */}
       <button
         onClick={handleSave}
         disabled={saving}
-        style={{ ...primaryBtn, marginTop: 16, opacity: saving ? 0.6 : 1 }}
+        className="ait-btn ait-btn-primary"
+        style={{ width: '100%', padding: '9px 16px' }}
       >
-        {saving ? 'Saving…' : 'Save settings'}
+        <IconSave size={14} />
+        <span>{saving ? 'Saving Settings…' : 'Save All Settings'}</span>
       </button>
     </section>
   );

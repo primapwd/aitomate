@@ -20,6 +20,15 @@ import { stepSelector } from '@/lib/runner/dom';
 import type { RunnerContentCommand, RunnerContentEvent } from '@/lib/runner/messages';
 import RecordingControls from './build/RecordingControls';
 import StepList from './build/StepList';
+import {
+  IconAlert,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconDownload,
+  IconSave,
+  IconSparkles,
+} from '@/components/ui/icons';
 
 type BuildMode = UiPrefs['buildMode'];
 
@@ -39,9 +48,6 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
   const [scenarioDesc, setScenarioDesc] = useState('');
   const [scenarioBaseUrl, setScenarioBaseUrl] = useState('');
   const [scenarioSlug, setScenarioSlug] = useState('');
-  // Slug auto-derives from the name until the user edits it directly —
-  // once touched, typing a new name must not silently regenerate/override
-  // a slug the user (or a loaded existing scenario) already set.
   const slugTouched = useRef(false);
   const [scenarioTags, setScenarioTags] = useState('');
   const [saveStatus, setSaveStatus] = useState<null | 'saving' | 'saved' | 'duplicate' | 'error'>(
@@ -49,12 +55,11 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
   );
   const [incompleteError, setIncompleteError] = useState('');
   const [locateError, setLocateError] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const mounted = useRef(true);
 
   // Load UI prefs + current tab on mount
   useEffect(() => {
-    // Reset on every (re)mount — StrictMode runs mount→cleanup→mount, and the
-    // ref would otherwise stay false after the first cleanup.
     mounted.current = true;
     getUiPrefs().then((prefs) => {
       if (mounted.current) setMode(prefs.buildMode);
@@ -100,8 +105,6 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
 
     const handler = (msg: unknown) => {
       const m = msg as RecorderPopupMessage;
-      // Only react to broadcasts about our own tab — a recording running in
-      // another tab must not leak into this panel's state.
       if (m.type === 'aitomate:recorder:state-change' && m.tabId === tabId && mounted.current) {
         setRecorderState(m.state);
         void refresh();
@@ -113,11 +116,7 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
     };
   }, [tabId, refresh]);
 
-  // Load an already-imported scenario for editing (RunView's "Edit" button).
-  // Pushes the steps into this tab's recorder-session store via set-steps —
-  // not just local React state — because `refresh()` above re-fetches steps
-  // from that same store on every recorder broadcast; setting local state
-  // alone would get silently clobbered by the next unrelated broadcast.
+  // Load an already-imported scenario for editing
   useEffect(() => {
     if (!editScenarioId || !tabId) return;
     let cancelled = false;
@@ -133,13 +132,10 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
       setScenarioName(entry.scenario.meta.name);
       setScenarioDesc(entry.scenario.meta.description ?? '');
       setScenarioBaseUrl(entry.scenario.meta.baseUrl ?? '');
-      // An existing scenario already has an authoritative slug (or one
-      // derived consistently from its name) — load it and mark "touched" so
-      // further name edits in this session don't silently regenerate it out
-      // from under the identity the library already matched it by.
       setScenarioSlug(effectiveSlug(entry.scenario));
       slugTouched.current = true;
       setScenarioTags(entry.scenario.meta.tags.join(', '));
+      setDetailsOpen(true);
       onEditConsumed?.();
     });
     return () => {
@@ -302,10 +298,6 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
     setSaveStatus('saving');
     try {
       const scenario = buildScenarioObject(steps, meta);
-      // Deduped by slug, not name — two scenarios can share a display name
-      // but never a slug. A declined confirm must not silently create a
-      // duplicate OR silently clobber the existing entry (fail loud, fail
-      // clear: a green "Saved" checkmark must never hide either outcome).
       const result = await saveScenarioDeduped(scenario, (existingName) =>
         window.confirm(
           `A scenario with the same slug already exists ("${existingName}"). Overwrite it?`,
@@ -329,33 +321,53 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
 
   if (!tabId) {
     return (
-      <section>
-        <p style={{ fontSize: 13, color: '#999' }}>Open a web page to start recording.</p>
-      </section>
+      <div className="ait-card" style={{ textAlign: 'center', padding: 24 }}>
+        <IconAlert size={24} color="var(--status-warning)" />
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8 }}>
+          Open a web page in Chrome to start building test scenarios.
+        </p>
+      </div>
     );
   }
 
   return (
     <section>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        {(['simple', 'advanced'] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => selectMode(m)}
-            aria-pressed={mode === m}
-            style={{
-              fontSize: 12,
-              padding: '4px 10px',
-              borderRadius: 999,
-              border: '1px solid ' + (mode === m ? '#1a1a1a' : '#ccc'),
-              background: mode === m ? '#1a1a1a' : '#fff',
-              color: mode === m ? '#fff' : '#333',
-              cursor: 'pointer',
-            }}
-          >
-            {m === 'simple' ? 'Simple' : 'Advanced'}
-          </button>
-        ))}
+      {/* Mode Switcher Segment Controls */}
+      <div
+        style={{
+          display: 'flex',
+          background: 'var(--bg-surface)',
+          padding: 3,
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--border-subtle)',
+          marginBottom: 12,
+        }}
+      >
+        {(['simple', 'advanced'] as const).map((m) => {
+          const isActive = mode === m;
+          return (
+            <button
+              key={m}
+              onClick={() => selectMode(m)}
+              aria-pressed={isActive}
+              style={{
+                flex: 1,
+                padding: '5px 12px',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                background: isActive ? 'var(--accent-gradient)' : 'transparent',
+                color: isActive ? '#fff' : 'var(--text-secondary)',
+                fontWeight: isActive ? 600 : 500,
+                fontSize: 11,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                boxShadow: isActive ? '0 2px 8px rgba(99, 102, 241, 0.25)' : 'none',
+              }}
+            >
+              {m === 'simple' ? 'Simple View' : 'Advanced View'}
+            </button>
+          );
+        })}
       </div>
 
       <RecordingControls
@@ -376,122 +388,162 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
       />
 
       {locateError && (
-        <p style={{ fontSize: 11, color: '#d32f2f', margin: '6px 0 0', textAlign: 'center' }}>
-          {locateError}
-        </p>
+        <div
+          style={{
+            marginTop: 8,
+            padding: '8px 12px',
+            background: 'var(--status-error-bg)',
+            border: '1px solid var(--status-error-border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--status-error)',
+            fontSize: 11,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <IconAlert size={14} color="var(--status-error)" />
+          <span>{locateError}</span>
+        </div>
       )}
 
+      {/* Save & Metadata Section */}
       {steps.length > 0 && (
-        <>
-          <details style={{ marginTop: 12 }}>
-            <summary style={exportSummary}>Export scenario</summary>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <input
-                value={scenarioName}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setScenarioName(value);
-                  if (!slugTouched.current) setScenarioSlug(slugify(value));
-                }}
-                placeholder="Scenario name"
-                style={exportInput}
-              />
-              <input
-                value={scenarioSlug}
-                onChange={(e) => {
-                  slugTouched.current = true;
-                  setScenarioSlug(e.target.value);
-                }}
-                placeholder="Slug (auto-generated, unique id — edit if you want)"
-                style={exportInput}
-              />
-              <input
-                value={scenarioDesc}
-                onChange={(e) => setScenarioDesc(e.target.value)}
-                placeholder="Description (optional)"
-                style={exportInput}
-              />
-              <input
-                value={scenarioBaseUrl}
-                onChange={(e) => setScenarioBaseUrl(e.target.value)}
-                placeholder="Base URL (optional, e.g. https://app.test or {{BASE_URL}})"
-                style={exportInput}
-              />
-              <input
-                value={scenarioTags}
-                onChange={(e) => setScenarioTags(e.target.value)}
-                placeholder="Tags (comma-separated, optional)"
-                style={exportInput}
-              />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button
-                  onClick={handleSave}
-                  disabled={saveStatus === 'saving'}
-                  style={{
-                    ...exportBtn,
-                    background: saveStatus === 'saved' ? '#2e7d32' : '#1a1a1a',
-                    opacity: saveStatus === 'saving' ? 0.6 : 1,
-                  }}
-                >
-                  {saveStatus === 'saving'
-                    ? 'Saving…'
-                    : saveStatus === 'saved'
-                      ? 'Saved ✓'
-                      : 'Save to library'}
-                </button>
-                <button onClick={handleExport} style={exportBtn}>
-                  Export as .aitomate.json
-                </button>
-              </div>
-              {saveStatus === 'error' && (
-                <p style={{ fontSize: 11, color: '#d32f2f', margin: '4px 0 0' }}>
-                  Failed to save. Try again.
-                </p>
-              )}
-              {saveStatus === 'duplicate' && (
-                <p style={{ fontSize: 11, color: '#999', margin: '4px 0 0' }}>
-                  Not saved — a scenario with that name already exists.
-                </p>
-              )}
-              {incompleteError && (
-                <p style={{ fontSize: 11, color: '#d32f2f', margin: '4px 0 0' }}>
-                  {incompleteError}
-                </p>
-              )}
+        <div style={{ marginTop: 14 }}>
+          <button
+            onClick={() => setDetailsOpen(!detailsOpen)}
+            className="ait-btn ait-btn-ghost"
+            style={{
+              width: '100%',
+              justifyContent: 'space-between',
+              padding: '6px 4px',
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <IconSparkles size={13} color="var(--accent-primary)" />
+              <span style={{ fontWeight: 600 }}>Save & Export Options</span>
+              <span className="ait-badge ait-badge-muted" style={{ fontSize: 9 }}>
+                {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+              </span>
             </div>
-          </details>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 6, textAlign: 'center' }}>
-            {steps.length} step{steps.length === 1 ? '' : 's'} recorded
-          </div>
-        </>
+            {detailsOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          </button>
+
+          {detailsOpen && (
+            <div
+              className="ait-card animate-fade-in"
+              style={{ marginTop: 6, padding: 12, background: 'var(--bg-surface)' }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>SCENARIO NAME</label>
+                  <input
+                    value={scenarioName}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setScenarioName(value);
+                      if (!slugTouched.current) setScenarioSlug(slugify(value));
+                    }}
+                    placeholder="e.g. Guest Checkout Flow"
+                    className="ait-input"
+                    style={{ marginTop: 2 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>SLUG (DEDUPE ID)</label>
+                  <input
+                    value={scenarioSlug}
+                    onChange={(e) => {
+                      slugTouched.current = true;
+                      setScenarioSlug(e.target.value);
+                    }}
+                    placeholder="guest-checkout-flow"
+                    className="ait-input"
+                    style={{ marginTop: 2, fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>DESCRIPTION (OPTIONAL)</label>
+                  <input
+                    value={scenarioDesc}
+                    onChange={(e) => setScenarioDesc(e.target.value)}
+                    placeholder="Brief summary of what this scenario tests"
+                    className="ait-input"
+                    style={{ marginTop: 2 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>BASE URL (OPTIONAL)</label>
+                  <input
+                    value={scenarioBaseUrl}
+                    onChange={(e) => setScenarioBaseUrl(e.target.value)}
+                    placeholder="e.g. {{BASE_URL}} or https://app.test"
+                    className="ait-input"
+                    style={{ marginTop: 2 }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>TAGS (COMMA SEPARATED)</label>
+                  <input
+                    value={scenarioTags}
+                    onChange={(e) => setScenarioTags(e.target.value)}
+                    placeholder="checkout, guest, critical"
+                    className="ait-input"
+                    style={{ marginTop: 2 }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                  <button
+                    onClick={handleSave}
+                    disabled={saveStatus === 'saving'}
+                    className="ait-btn ait-btn-primary ait-btn-sm"
+                    style={{
+                      background: saveStatus === 'saved' ? 'var(--status-success)' : undefined,
+                    }}
+                  >
+                    {saveStatus === 'saved' ? <IconCheck size={13} /> : <IconSave size={13} />}
+                    <span>
+                      {saveStatus === 'saving'
+                        ? 'Saving…'
+                        : saveStatus === 'saved'
+                          ? 'Saved ✓'
+                          : 'Save to Library'}
+                    </span>
+                  </button>
+
+                  <button onClick={handleExport} className="ait-btn ait-btn-secondary ait-btn-sm">
+                    <IconDownload size={13} />
+                    <span>Export JSON</span>
+                  </button>
+                </div>
+
+                {saveStatus === 'error' && (
+                  <p style={{ fontSize: 11, color: 'var(--status-error)', margin: '4px 0 0' }}>
+                    Failed to save scenario. Try again.
+                  </p>
+                )}
+                {saveStatus === 'duplicate' && (
+                  <p style={{ fontSize: 11, color: 'var(--status-warning)', margin: '4px 0 0' }}>
+                    Not saved — a scenario with that slug already exists.
+                  </p>
+                )}
+                {incompleteError && (
+                  <p style={{ fontSize: 11, color: 'var(--status-error)', margin: '4px 0 0' }}>
+                    {incompleteError}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </section>
   );
 }
-
-const exportSummary: React.CSSProperties = {
-  fontSize: 12,
-  color: '#555',
-  cursor: 'pointer',
-  padding: '4px 0',
-};
-
-const exportInput: React.CSSProperties = {
-  fontSize: 12,
-  padding: '4px 8px',
-  border: '1px solid #ddd',
-  borderRadius: 4,
-  width: '100%',
-  boxSizing: 'border-box',
-};
-
-const exportBtn: React.CSSProperties = {
-  fontSize: 12,
-  padding: '5px 14px',
-  border: '1px solid #1a1a1a',
-  borderRadius: 6,
-  background: '#1a1a1a',
-  color: '#fff',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};

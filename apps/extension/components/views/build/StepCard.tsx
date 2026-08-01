@@ -1,5 +1,20 @@
 import { useState } from 'react';
 import type { Resolver, Selector, Step } from '@aitomate/schema';
+import {
+  IconAssert,
+  IconChevronDown,
+  IconChevronUp,
+  IconClick,
+  IconCross,
+  IconCrosshair,
+  IconDatabase,
+  IconEye,
+  IconFill,
+  IconNavigate,
+  IconTrash,
+  IconWait,
+  IconWand,
+} from '@/components/ui/icons';
 
 interface Props {
   step: Step;
@@ -16,31 +31,97 @@ export default function StepCard(props: Props) {
   const { step, index, advanced, onDelete, onUpdate, onMoveUp, onMoveDown, onLocate } = props;
   const description = describeStep(step, advanced ?? false);
 
+  const actionColors: Record<string, { bg: string; border: string; text: string }> = {
+    click: { bg: 'rgba(56, 189, 248, 0.12)', border: 'rgba(56, 189, 248, 0.3)', text: '#38bdf8' },
+    fill: { bg: 'rgba(139, 92, 246, 0.12)', border: 'rgba(139, 92, 246, 0.3)', text: '#a78bfa' },
+    navigate: { bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.3)', text: '#34d399' },
+    wait: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.3)', text: '#fbbf24' },
+    assert: { bg: 'rgba(244, 63, 94, 0.12)', border: 'rgba(244, 63, 94, 0.3)', text: '#f87171' },
+    upload: { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.3)', text: '#c084fc' },
+    keypress: { bg: 'rgba(99, 102, 241, 0.12)', border: 'rgba(99, 102, 241, 0.3)', text: '#818cf8' },
+  };
+
+  const currentTheme = actionColors[step.action] ?? {
+    bg: 'rgba(255, 255, 255, 0.05)',
+    border: 'var(--border-subtle)',
+    text: 'var(--text-secondary)',
+  };
+
   return (
-    <div style={card}>
+    <div
+      className="ait-card animate-fade-in"
+      style={{
+        padding: '10px 12px',
+        marginBottom: 8,
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-subtle)',
+        borderLeft: `3px solid ${currentTheme.text}`,
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <span style={num}>{index + 1}</span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: 'var(--text-muted)',
+            minWidth: 20,
+            height: 20,
+            borderRadius: '50%',
+            background: 'rgba(255, 255, 255, 0.06)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: 2,
+          }}
+        >
+          {index + 1}
+        </span>
+
         <div style={{ flex: 1, minWidth: 0 }}>
-          <StepIcon action={step.action} />
-          <span style={{ fontSize: 12, color: '#333', marginLeft: 4 }}>{description}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span
+              className="ait-badge"
+              style={{
+                background: currentTheme.bg,
+                color: currentTheme.text,
+                border: `1px solid ${currentTheme.border}`,
+                fontSize: 9,
+              }}
+            >
+              <StepIcon action={step.action} />
+              {step.action}
+            </span>
+
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>
+              {description}
+            </span>
+          </div>
+
           {advanced && (
-            <div style={{ marginTop: 4, fontSize: 11, color: '#888' }}>
-              <code style={{ fontSize: 10 }}>{step.id}</code>
+            <div style={{ marginTop: 3, fontSize: 10, color: 'var(--text-muted)' }}>
+              ID: <code style={{ fontSize: 10, color: '#a5b4fc' }}>{step.id}</code>
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-          {onMoveUp && <MiniBtn onClick={onMoveUp} label="Move up" symbol="↑" />}
-          {onMoveDown && <MiniBtn onClick={onMoveDown} label="Move down" symbol="↓" />}
-          {onLocate && <MiniBtn onClick={onLocate} label="Locate on page" symbol="👁" />}
-          <MiniBtn onClick={onDelete} label="Delete step" symbol="✕" danger />
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+          {onMoveUp && <MiniBtn onClick={onMoveUp} label="Move up" symbol={<IconChevronUp size={12} />} />}
+          {onMoveDown && <MiniBtn onClick={onMoveDown} label="Move down" symbol={<IconChevronDown size={12} />} />}
+          {onLocate && (
+            <MiniBtn
+              onClick={onLocate}
+              label="Locate element on page"
+              symbol={<IconCrosshair size={12} color="#38bdf8" />}
+              highlight
+            />
+          )}
+          <MiniBtn onClick={onDelete} label="Delete step" symbol={<IconTrash size={12} />} danger />
         </div>
       </div>
 
-      {/* === Inline editors === */}
-
-      {/* Static fill value — Simple-mode scope per spec T2.6. In Advanced
-          mode the ResolverEditor below already covers it. */}
+      {/* Inline Editors */}
       {!advanced && step.action === 'fill' && step.resolver.type === 'static' && (
         <FieldGroup>
           <InlineInput
@@ -52,12 +133,12 @@ export default function StepCard(props: Props) {
         </FieldGroup>
       )}
 
-      {/* Advanced-mode panels */}
+      {/* Advanced Mode Panels */}
       {advanced && (
-        <>
-          {/* Selector editor (any step with a selector) */}
+        <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px dashed var(--border-subtle)' }}>
+          {/* Selector Editor */}
           {'selector' in step && (
-            <FieldGroup label="Selector">
+            <FieldGroup label="Target Selector">
               <SelectorEditor
                 selector={step.selector as Selector}
                 onChange={(sel) => onUpdate({ selector: sel } as Partial<Step>)}
@@ -65,9 +146,9 @@ export default function StepCard(props: Props) {
             </FieldGroup>
           )}
 
-          {/* Resolver config (fill steps only) */}
+          {/* Resolver Config */}
           {step.action === 'fill' && (
-            <FieldGroup label="Resolver">
+            <FieldGroup label="Value Resolver">
               <ResolverEditor
                 resolver={step.resolver}
                 onChange={(res) => onUpdate({ resolver: res } as Partial<Step>)}
@@ -75,37 +156,28 @@ export default function StepCard(props: Props) {
             </FieldGroup>
           )}
 
-          {/* Assertion editor (assert steps only) */}
+          {/* Assertion Editor */}
           {step.action === 'assert' && (
-            <FieldGroup label="Assertion">
-              <AssertionEditor
-                step={step}
-                onChange={(patch) => onUpdate(patch)}
-              />
+            <FieldGroup label="Assertion Configuration">
+              <AssertionEditor step={step} onChange={(patch) => onUpdate(patch)} />
             </FieldGroup>
           )}
 
-          {/* URL editor */}
+          {/* URL Editor */}
           {step.action === 'navigate' && (
-            <FieldGroup label="URL">
+            <FieldGroup label="Target URL">
               <InlineInput
                 value={step.url}
                 onChange={(v) => onUpdate({ url: v } as Partial<Step>)}
-                placeholder="/path"
+                placeholder="/path or https://..."
               />
             </FieldGroup>
           )}
 
-          {/* Wait step details */}
+          {/* Wait Step Details */}
           {step.action === 'wait' && (
             <FieldGroup>
               {!step.forSelector && (
-                // Gated on `!forSelector` (which mode this wait step is in),
-                // not on `durationMs !== undefined` — the old condition tied
-                // the field's visibility to the very value it edits, so
-                // clearing the number to '' set durationMs to undefined
-                // (`Number('') || undefined`), which then hid the input
-                // entirely with no way to type a new value back in.
                 <InlineInput
                   label="Duration (ms)"
                   value={step.durationMs !== undefined ? String(step.durationMs) : ''}
@@ -114,7 +186,7 @@ export default function StepCard(props: Props) {
               )}
               {step.forSelector && (
                 <SelectorEditor
-                  label="Wait for element"
+                  label="Wait for Element"
                   selector={step.forSelector}
                   onChange={(sel) => onUpdate({ forSelector: sel } as Partial<Step>)}
                 />
@@ -122,9 +194,9 @@ export default function StepCard(props: Props) {
             </FieldGroup>
           )}
 
-          {/* Fixture ref (upload steps) */}
+          {/* Fixture Ref */}
           {step.action === 'upload' && (
-            <FieldGroup label="Fixture">
+            <FieldGroup label="File Fixture">
               <InlineInput
                 value={step.fixtureRef}
                 onChange={(v) => onUpdate({ fixtureRef: v } as Partial<Step>)}
@@ -133,8 +205,8 @@ export default function StepCard(props: Props) {
             </FieldGroup>
           )}
 
-          {/* Timeout + retry */}
-          <FieldGroup label="Options">
+          {/* Timeout + Retry Options */}
+          <FieldGroup label="Step Options">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <InlineInput
                 label="Timeout (ms)"
@@ -165,7 +237,7 @@ export default function StepCard(props: Props) {
               />
             </div>
           </FieldGroup>
-        </>
+        </div>
       )}
     </div>
   );
@@ -191,7 +263,8 @@ function SelectorEditor({
         <select
           value={selector.strategy}
           onChange={(e) => onChange({ ...selector, strategy: e.target.value as Selector['strategy'] })}
-          style={selectStyle}
+          className="ait-select"
+          style={{ width: 90, flexShrink: 0, padding: '4px 22px 4px 6px', fontSize: 11 }}
         >
           {STRATEGIES.map((s) => (
             <option key={s} value={s}>
@@ -202,7 +275,8 @@ function SelectorEditor({
         <input
           value={selector.value}
           onChange={(e) => onChange({ ...selector, value: e.target.value })}
-          style={fieldStyle}
+          className="ait-input"
+          style={{ padding: '4px 8px', fontSize: 11 }}
           placeholder="value"
         />
       </div>
@@ -213,10 +287,10 @@ function SelectorEditor({
 // ── Resolver editor ──
 
 const RESOLVER_TYPES = [
-  { type: 'static', label: 'Static' },
-  { type: 'dynamic', mode: 'array', label: 'Dynamic — Array' },
-  { type: 'dynamic', mode: 'ai', label: 'Dynamic — AI' },
-  { type: 'database', label: 'Database' },
+  { type: 'static', label: 'Static Value' },
+  { type: 'dynamic', mode: 'array', label: 'Dynamic — Pick from List' },
+  { type: 'dynamic', mode: 'ai', label: 'Dynamic — AI Generated' },
+  { type: 'database', label: 'Database Query' },
 ] as const;
 
 function ResolverEditor({
@@ -229,7 +303,6 @@ function ResolverEditor({
   type ResShape = { type: string; mode?: string };
   const current = { type: resolver.type, mode: (resolver as ResShape).mode } as ResShape;
 
-  // Determine active preset
   const activeIdx = RESOLVER_TYPES.findIndex(
     (r) => r.type === current.type && (r as ResShape).mode === current.mode,
   );
@@ -243,7 +316,8 @@ function ResolverEditor({
           const selected = RESOLVER_TYPES[Number(e.target.value)];
           onChange(buildResolver(selected));
         }}
-        style={selectStyle}
+        className="ait-select"
+        style={{ padding: '4px 22px 4px 8px', fontSize: 11 }}
       >
         {RESOLVER_TYPES.map((r, i) => (
           <option key={i} value={i}>
@@ -254,17 +328,18 @@ function ResolverEditor({
 
       <div style={{ marginTop: 6 }}>
         {active.type === 'static' && (
-          <ResolverFields label="Value">
+          <ResolverFields label="Static Value">
             <input
               value={String((resolver as { value: string | number | boolean }).value ?? '')}
               onChange={(e) => onChange({ type: 'static', value: e.target.value })}
-              style={fieldStyle}
+              className="ait-input"
+              style={{ padding: '4px 8px', fontSize: 11 }}
               placeholder="Value"
             />
           </ResolverFields>
         )}
         {active.type === 'dynamic' && active.mode === 'array' && (
-          <ResolverFields label="Values (JSON array)">
+          <ResolverFields label="Values (JSON Array)">
             <JsonArrayInput
               values={(resolver as { values?: (string | number | boolean)[] }).values ?? []}
               onCommit={(values) =>
@@ -276,7 +351,7 @@ function ResolverEditor({
                 })
               }
             />
-            <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: 'var(--text-secondary)' }}>
               <input
                 type="checkbox"
                 checked={(resolver as { order?: string }).order === 'sequential'}
@@ -287,12 +362,12 @@ function ResolverEditor({
                   } as Resolver)
                 }
               />
-              Sequential
+              Sequential Order
             </label>
           </ResolverFields>
         )}
         {active.type === 'dynamic' && active.mode === 'ai' && (
-          <ResolverFields label="AI prompt">
+          <ResolverFields label="AI Generation Prompt">
             <textarea
               value={(resolver as { prompt: string }).prompt ?? ''}
               onChange={(e) =>
@@ -303,43 +378,40 @@ function ResolverEditor({
                   provider: (resolver as { provider: string }).provider ?? 'configured-default',
                 })
               }
-              style={{ ...fieldStyle, minHeight: 40, resize: 'vertical' }}
-              placeholder="Describe the value you want"
+              className="ait-textarea"
+              style={{ minHeight: 45, resize: 'vertical', fontSize: 11 }}
+              placeholder="Describe the value to generate (e.g. realistic Indonesian full name)"
             />
-            <InlineInput
-              label="Provider"
-              value={(resolver as { provider: string }).provider ?? 'configured-default'}
-              onChange={(v) =>
-                onChange({
-                  ...(resolver as object),
-                  provider: v || 'configured-default',
-                } as Resolver)
-              }
-              compact
-            />
+            <div style={{ marginTop: 4 }}>
+              <InlineInput
+                label="Provider"
+                value={(resolver as { provider: string }).provider ?? 'configured-default'}
+                onChange={(v) =>
+                  onChange({
+                    ...(resolver as object),
+                    provider: v || 'configured-default',
+                  } as Resolver)
+                }
+                compact
+              />
+            </div>
           </ResolverFields>
         )}
         {active.type === 'database' && (
-          <ResolverFields label="Database query">
+          <ResolverFields label="Database Integration">
             <InlineInput
-              label="Data source"
+              label="Data Source"
               value={(resolver as { dataSourceRef: string }).dataSourceRef ?? ''}
-              onChange={(v) =>
-                onChange({ ...(resolver as object), dataSourceRef: v } as Resolver)
-              }
+              onChange={(v) => onChange({ ...(resolver as object), dataSourceRef: v } as Resolver)}
               compact
             />
             <div style={{ marginTop: 4 }}>
               <textarea
                 value={(resolver as { query: string }).query ?? ''}
-                onChange={(e) =>
-                  onChange({
-                    ...(resolver as object),
-                    query: e.target.value,
-                  } as Resolver)
-                }
-                style={{ ...fieldStyle, minHeight: 40, resize: 'vertical' }}
-                placeholder="SELECT email FROM users LIMIT 1"
+                onChange={(e) => onChange({ ...(resolver as object), query: e.target.value } as Resolver)}
+                className="ait-textarea"
+                style={{ minHeight: 45, resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+                placeholder="SELECT email FROM users WHERE role = :role LIMIT 1"
               />
             </div>
           </ResolverFields>
@@ -349,13 +421,6 @@ function ResolverEditor({
   );
 }
 
-/**
- * Free-typing JSON editor for the dynamic-array value list. A controlled
- * input bound straight to JSON.stringify(values) is uneditable: every
- * intermediate keystroke is invalid JSON, gets discarded, and the field
- * snaps back. So keep a local draft and only commit parses that yield an
- * array; an invalid draft is flagged, never sent upstream.
- */
 function JsonArrayInput({
   values,
   onCommit,
@@ -381,11 +446,16 @@ function JsonArrayInput({
           const parsed = JSON.parse(text) as unknown;
           if (Array.isArray(parsed)) onCommit(parsed as (string | number | boolean)[]);
         } catch {
-          // Keep typing — commit happens on the next valid parse.
+          // Keep typing — commit on valid parse
         }
       }}
-      style={{ ...fieldStyle, ...(invalid ? { borderColor: '#c33' } : {}), width: '100%' }}
-      placeholder='["val1","val2"]'
+      className="ait-input"
+      style={{
+        fontSize: 11,
+        fontFamily: 'var(--font-mono)',
+        borderColor: invalid ? 'var(--status-error)' : undefined,
+      }}
+      placeholder='["value1", "value2"]'
       aria-invalid={invalid}
     />
   );
@@ -419,8 +489,8 @@ function AssertionEditor({
     case 'elementEnabled':
     case 'elementDisabled':
       return (
-        <div style={{ fontSize: 11, color: '#666' }}>
-          Uses the selector above. No extra parameters.
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          Uses the selector specified above. No extra parameters required.
         </div>
       );
 
@@ -432,13 +502,13 @@ function AssertionEditor({
             onChange={(v) => patch({ value: v } as Partial<Step>)}
             placeholder="Substring to find"
           />
-          <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+          <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, color: 'var(--text-secondary)' }}>
             <input
               type="checkbox"
               checked={step.caseInsensitive ?? false}
               onChange={(e) => patch({ caseInsensitive: e.target.checked } as Partial<Step>)}
             />
-            Case insensitive
+            Case Insensitive
           </label>
         </div>
       );
@@ -457,29 +527,29 @@ function AssertionEditor({
         <InlineInput
           value={step.value}
           onChange={(v) => patch({ value: v } as Partial<Step>)}
-          placeholder="Expected value"
+          placeholder="Expected input value"
         />
       );
 
     case 'urlMatches':
       return (
-        <div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <select
-              value={step.patternType ?? 'glob'}
-              onChange={(e) => patch({ patternType: e.target.value as 'glob' | 'regex' } as Partial<Step>)}
-              style={selectStyle}
-            >
-              <option value="glob">Glob</option>
-              <option value="regex">Regex</option>
-            </select>
-            <input
-              value={step.pattern}
-              onChange={(e) => patch({ pattern: e.target.value } as Partial<Step>)}
-              style={fieldStyle}
-              placeholder={step.patternType === 'regex' ? '\\/orders\\/\\d+' : '**/orders/*'}
-            />
-          </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <select
+            value={step.patternType ?? 'glob'}
+            onChange={(e) => patch({ patternType: e.target.value as 'glob' | 'regex' } as Partial<Step>)}
+            className="ait-select"
+            style={{ width: 80, flexShrink: 0, padding: '4px 20px 4px 6px', fontSize: 11 }}
+          >
+            <option value="glob">Glob</option>
+            <option value="regex">Regex</option>
+          </select>
+          <input
+            value={step.pattern}
+            onChange={(e) => patch({ pattern: e.target.value } as Partial<Step>)}
+            className="ait-input"
+            style={{ padding: '4px 8px', fontSize: 11 }}
+            placeholder={step.patternType === 'regex' ? '\\/orders\\/\\d+' : '**/orders/*'}
+          />
         </div>
       );
 
@@ -489,7 +559,8 @@ function AssertionEditor({
           <select
             value={step.comparator ?? 'eq'}
             onChange={(e) => patch({ comparator: e.target.value as 'eq' | 'gte' | 'lte' } as Partial<Step>)}
-            style={selectStyle}
+            className="ait-select"
+            style={{ width: 60, padding: '4px 18px 4px 6px', fontSize: 11 }}
           >
             <option value="eq">=</option>
             <option value="gte">≥</option>
@@ -499,29 +570,28 @@ function AssertionEditor({
             type="number"
             value={String(step.count ?? 0)}
             onChange={(e) => patch({ count: Number(e.target.value) || 0 } as Partial<Step>)}
-            style={{ ...fieldStyle, width: 60 }}
+            className="ait-input"
+            style={{ width: 60, padding: '4px 6px', fontSize: 11 }}
           />
         </div>
       );
 
     default:
-      return <div style={{ fontSize: 11, color: '#c33' }}>Unknown assertion type</div>;
+      return <div style={{ fontSize: 11, color: 'var(--status-error)' }}>Unknown assertion type</div>;
   }
 }
 
 // ── Shared UI helpers ──
 
 function StepIcon({ action }: { action: string }) {
-  const icons: Record<string, string> = {
-    navigate: '↗',
-    click: '👆',
-    fill: '✏️',
-    keypress: '⌨',
-    wait: '⏳',
-    upload: '📎',
-    assert: '✓',
-  };
-  return <span style={{ fontSize: 12 }}>{icons[action] ?? '?'}</span>;
+  switch (action) {
+    case 'click': return <IconClick size={12} />;
+    case 'fill': return <IconFill size={12} />;
+    case 'navigate': return <IconNavigate size={12} />;
+    case 'wait': return <IconWait size={12} />;
+    case 'assert': return <IconAssert size={12} />;
+    default: return <IconEye size={12} />;
+  }
 }
 
 function describeStep(step: Step, advanced: boolean): string {
@@ -587,26 +657,40 @@ function MiniBtn({
   label,
   symbol,
   danger,
+  highlight,
 }: {
   onClick: () => void;
   label: string;
-  symbol: string;
+  symbol: React.ReactNode;
   danger?: boolean;
+  highlight?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={label}
+      className="ait-btn ait-btn-icon"
       style={{
-        fontSize: 11,
-        padding: '2px 5px',
-        border: '1px solid #ddd',
-        borderRadius: 4,
-        background: danger ? '#fee' : '#fff',
-        color: danger ? '#c33' : '#666',
+        padding: '3px 5px',
+        border: '1px solid',
+        borderColor: danger
+          ? 'var(--status-error-border)'
+          : highlight
+            ? 'rgba(56, 189, 248, 0.4)'
+            : 'var(--border-subtle)',
+        borderRadius: 'var(--radius-sm)',
+        background: danger
+          ? 'var(--status-error-bg)'
+          : highlight
+            ? 'rgba(56, 189, 248, 0.12)'
+            : 'var(--bg-surface-hover)',
+        color: danger
+          ? 'var(--status-error)'
+          : highlight
+            ? '#38bdf8'
+            : 'var(--text-secondary)',
         cursor: 'pointer',
-        lineHeight: 1,
       }}
     >
       {symbol}
@@ -614,11 +698,9 @@ function MiniBtn({
   );
 }
 
-// ── Input / field helpers ──
-
 function FieldGroup({ children, label }: { children: React.ReactNode; label?: string }) {
   return (
-    <div style={{ marginTop: 8, paddingLeft: 26, fontSize: 11 }}>
+    <div style={{ marginTop: 8, fontSize: 11 }}>
       {label && <FieldLabel>{label}</FieldLabel>}
       {children}
     </div>
@@ -626,12 +708,16 @@ function FieldGroup({ children, label }: { children: React.ReactNode; label?: st
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: '#666', marginBottom: 2 }}>{children}</div>;
+  return (
+    <div style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>
+      {children}
+    </div>
+  );
 }
 
 function ResolverFields({ children, label }: { children: React.ReactNode; label?: string }) {
   return (
-    <div style={{ marginTop: 4 }}>
+    <div style={{ marginTop: 6 }}>
       {label && <FieldLabel>{label}</FieldLabel>}
       {children}
     </div>
@@ -652,46 +738,15 @@ function InlineInput({
   compact?: boolean;
 }) {
   return (
-    <label style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
-      {label && <span style={{ whiteSpace: 'nowrap', color: '#666' }}>{label}:</span>}
+    <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, flex: compact ? 'none' : 1 }}>
+      {label && <span style={{ whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontSize: 11 }}>{label}:</span>}
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ ...fieldStyle, width: compact ? 80 : '100%' }}
+        className="ait-input"
+        style={{ padding: '4px 8px', fontSize: 11, width: compact ? 80 : '100%' }}
         placeholder={placeholder}
       />
     </label>
   );
 }
-
-const card: React.CSSProperties = {
-  padding: '8px 10px',
-  marginBottom: 6,
-  border: '1px solid #e0e0e0',
-  borderRadius: 8,
-  background: '#fafafa',
-};
-
-const fieldStyle: React.CSSProperties = {
-  fontSize: 11,
-  padding: '3px 6px',
-  border: '1px solid #ddd',
-  borderRadius: 4,
-  boxSizing: 'border-box',
-};
-
-const selectStyle: React.CSSProperties = {
-  fontSize: 11,
-  padding: '3px 4px',
-  border: '1px solid #ddd',
-  borderRadius: 4,
-  background: '#fff',
-};
-
-const num: React.CSSProperties = {
-  fontSize: 11,
-  color: '#999',
-  minWidth: 18,
-  marginTop: 2,
-  textAlign: 'center',
-};

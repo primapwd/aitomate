@@ -4,7 +4,6 @@ import {
   importScenario,
   pickFile,
   saveScenarioDeduped,
-  type StoredScenario,
 } from '@/lib/import-export';
 import {
   initialOnboardingState,
@@ -12,6 +11,7 @@ import {
   scenarioNeedsConfig,
   type OnboardingState,
 } from '@/lib/onboarding';
+import { IconAitomateLogo, IconAlert, IconCheck, IconSparkles, IconUpload } from './ui/icons';
 
 const STORAGE_KEY = 'aitomate:onboarding';
 
@@ -22,9 +22,6 @@ interface Props {
 export default function OnboardingWizard({ onComplete }: Props) {
   const [state, setState] = useState<OnboardingState>(initialOnboardingState);
   const [error, setError] = useState('');
-  // Owns its own visibility end-to-end (mount check + hide-on-complete) so
-  // the parent view doesn't need a second, independently-racing read of the
-  // same storage key just to decide whether to render this component.
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -50,7 +47,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
   );
 
   const handleStart = useCallback(() => dispatch({ type: 'START' }), [dispatch]);
-
   const handleSkip = useCallback(() => dispatch({ type: 'SKIP' }), [dispatch]);
 
   const handleImportScenario = useCallback(async () => {
@@ -85,51 +81,127 @@ export default function OnboardingWizard({ onComplete }: Props) {
   if (!visible) return null;
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.4)',
-    }}>
-      <div style={{
-        background: '#fff', borderRadius: 12, padding: 32, maxWidth: 400, width: '90%',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-      }}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-overlay)',
+        backdropFilter: 'blur(8px)',
+        padding: 16,
+      }}
+    >
+      <div
+        className="ait-card animate-fade-in"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-medium)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 24,
+          maxWidth: 380,
+          width: '100%',
+          boxShadow: 'var(--shadow-lg)',
+        }}
+      >
         {state.status === 'welcome' && (
           <>
-            <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600 }}>Welcome to Aitomate</h2>
-            <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, margin: '0 0 16px' }}>
-              Collaborative, AI-assisted test automation for your web app. Get started by importing a scenario file, then run it with one click.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <IconAitomateLogo size={32} />
+              <div>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#fff' }}>
+                  Welcome to Aitomate
+                </h2>
+                <span style={{ fontSize: 11, color: 'var(--accent-primary)' }}>
+                  Collaborative AI Test Automation
+                </span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 18px' }}>
+              Aitomate lets developers, QA, and product managers record and run automated UI test scenarios right in the browser. Zero-setup baseline for static tests!
             </p>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={handleSkip} style={skipBtn}>Skip</button>
-              <button onClick={handleStart} style={primaryBtn}>Get Started</button>
+              <button onClick={handleSkip} className="ait-btn ait-btn-ghost">
+                Skip
+              </button>
+              <button onClick={handleStart} className="ait-btn ait-btn-primary">
+                <IconSparkles size={14} />
+                <span>Get Started</span>
+              </button>
             </div>
           </>
         )}
 
         {state.status === 'import-scenario' && (
           <>
-            <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>Import a Scenario</h2>
-            <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, margin: '0 0 12px' }}>
-              Pick a <code>.aitomate.json</code> file from your computer.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <IconUpload size={20} color="var(--accent-primary)" />
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff' }}>
+                Import Your First Scenario
+              </h2>
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 14px' }}>
+              Select a <code>.aitomate.json</code> scenario file from your computer to add it to your test library.
             </p>
-            {error && <p style={{ fontSize: 11, color: '#c33', marginBottom: 8 }}>{error}</p>}
+
+            {error && (
+              <div
+                style={{
+                  padding: '6px 10px',
+                  background: 'var(--status-error-bg)',
+                  border: '1px solid var(--status-error-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--status-error)',
+                  fontSize: 11,
+                  marginBottom: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <IconAlert size={14} color="var(--status-error)" />
+                <span>{error}</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={handleSkip} style={skipBtn}>Skip</button>
-              <button onClick={handleImportScenario} style={primaryBtn}>Choose File…</button>
+              <button onClick={handleSkip} className="ait-btn ait-btn-ghost">
+                Skip
+              </button>
+              <button onClick={handleImportScenario} className="ait-btn ait-btn-primary">
+                <IconUpload size={14} />
+                <span>Choose File…</span>
+              </button>
             </div>
           </>
         )}
 
         {state.status === 'import-config' && (
           <>
-            <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>Configuration Needed</h2>
-            <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, margin: '0 0 12px' }}>
-              This scenario uses AI or database features. Open Settings to configure your LLM provider or database connector, then come back.
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <IconSparkles size={20} color="var(--status-warning)" />
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff' }}>
+                Configuration Needed
+              </h2>
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 14px' }}>
+              This scenario uses AI or database value resolvers. You can configure your LLM provider or database connector in Settings.
             </p>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={handleSkip} style={skipBtn}>Skip</button>
-              <button onClick={handleConfigDone} style={primaryBtn}>Done</button>
+              <button onClick={handleSkip} className="ait-btn ait-btn-ghost">
+                Skip
+              </button>
+              <button onClick={handleConfigDone} className="ait-btn ait-btn-primary">
+                <IconCheck size={14} />
+                <span>Got It</span>
+              </button>
             </div>
           </>
         )}
@@ -137,13 +209,3 @@ export default function OnboardingWizard({ onComplete }: Props) {
     </div>
   );
 }
-
-const primaryBtn: React.CSSProperties = {
-  fontSize: 13, padding: '6px 14px', border: 'none', borderRadius: 6,
-  background: '#1a1a1a', color: '#fff', cursor: 'pointer',
-};
-
-const skipBtn: React.CSSProperties = {
-  fontSize: 13, padding: '6px 14px', border: '1px solid #ccc', borderRadius: 6,
-  background: '#fff', color: '#666', cursor: 'pointer',
-};

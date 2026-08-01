@@ -2,6 +2,7 @@ import type { Step } from '@aitomate/schema';
 import { MANUAL_STEP_ACTIONS, type ManualStepAction } from '@/lib/build/manual-step';
 import { stepSelector } from '@/lib/runner/dom';
 import StepCard from './StepCard';
+import { IconAssert, IconClick, IconCode, IconFill, IconNavigate, IconPlus, IconWait } from '@/components/ui/icons';
 
 interface Props {
   steps: Step[];
@@ -12,6 +13,14 @@ interface Props {
   onAdd: (action: ManualStepAction) => void;
   onLocate?: (index: number) => void;
 }
+
+const ACTION_ICONS: Record<ManualStepAction, React.ReactNode> = {
+  click: <IconClick size={12} />,
+  fill: <IconFill size={12} />,
+  navigate: <IconNavigate size={12} />,
+  wait: <IconWait size={12} />,
+  assert: <IconAssert size={12} />,
+};
 
 const ACTION_LABELS: Record<ManualStepAction, string> = {
   click: 'Click',
@@ -25,9 +34,37 @@ export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, 
   return (
     <div>
       {steps.length === 0 && (
-        <p style={{ fontSize: 12, color: '#999', fontStyle: 'italic', textAlign: 'center', padding: 16 }}>
-          No steps yet. Click Record and interact with the page{advanced ? ', or add one manually below' : ''}.
-        </p>
+        <div
+          className="ait-card"
+          style={{
+            textAlign: 'center',
+            padding: '24px 16px',
+            background: 'var(--bg-surface)',
+            borderStyle: 'dashed',
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'rgba(99, 102, 241, 0.12)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+              color: 'var(--accent-primary)',
+            }}
+          >
+            <IconCode size={18} />
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+            No steps in scenario
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 260, margin: '0 auto' }}>
+            Click <strong style={{ color: '#ef4444' }}>Record</strong> above to capture page interactions{advanced ? ', or add steps manually using the buttons below' : ''}.
+          </div>
+        </div>
       )}
 
       {steps.map((step, i) => (
@@ -44,31 +81,41 @@ export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, 
         />
       ))}
 
-      {/* Manual step insertion needs raw selector/URL editing to be usable,
-          which only Advanced mode exposes (Constitution: Simple mode never
-          shows raw selector syntax) — a step added blank in Simple mode would
-          have no way to be completed. */}
+      {/* Manual step insertion in Advanced mode */}
       {advanced && (
-        <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {MANUAL_STEP_ACTIONS.map((action) => (
-            <button
-              key={action}
-              onClick={() => onAdd(action)}
-              style={{
-                fontSize: 11,
-                padding: '4px 10px',
-                border: '1px dashed #ccc',
-                borderRadius: 6,
-                background: '#fff',
-                color: '#666',
-                cursor: 'pointer',
-                flex: 1,
-                minWidth: 50,
-              }}
-            >
-              + {ACTION_LABELS[action]}
-            </button>
-          ))}
+        <div style={{ marginTop: 12 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              marginBottom: 6,
+            }}
+          >
+            Add Step Manually
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {MANUAL_STEP_ACTIONS.map((action) => (
+              <button
+                key={action}
+                onClick={() => onAdd(action)}
+                className="ait-btn ait-btn-secondary ait-btn-sm"
+                style={{
+                  flex: 1,
+                  minWidth: 60,
+                  fontSize: 11,
+                  padding: '5px 8px',
+                  borderStyle: 'dashed',
+                }}
+              >
+                <IconPlus size={11} />
+                {ACTION_ICONS[action]}
+                <span>{ACTION_LABELS[action]}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
