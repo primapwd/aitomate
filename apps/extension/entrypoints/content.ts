@@ -48,6 +48,7 @@ export default defineContentScript({
       const message: RecorderEvent = {
         type: 'aitomate:recorder:step-captured',
         step: step as Step,
+        generation: recorderState.generation,
       };
       void browser.runtime.sendMessage(message);
     }
@@ -147,6 +148,11 @@ export default defineContentScript({
           case 'aitomate:runner:locate-element':
             if (!sameFramePath(message.selector.framePath, framePath)) return;
             return handleLocateElement(message.selector);
+          case 'aitomate:runner:pick-element':
+            return handlePickElement();
+          case 'aitomate:runner:cancel-pick':
+            cancelPick();
+            return;
           default:
             return;
         }
@@ -635,6 +641,83 @@ async function handleLocateElement(selector: Selector): Promise<RunnerContentEve
   }, 2000);
 
   return { type: 'aitomate:runner:element-located', found: true };
+}
+
+// ── Pick element (devtools-style inspect-and-click, PO/QA selector picking) ──
+
+let pickCleanup: (() => void) | null = null;
+
+/**
+ * Lets a non-technical user point at an element instead of reading DOM/
+ * devtools to find a selector. Runs in every frame (mirrors execute-step's
+ * all_frames pattern) — whichever frame the user actually clicks in is the
+ * one that resolves; that's correct here, not a race to guard against,
+ * since the target frame isn't known ahead of time.
+ */
+function handlePickElement(): Promise<RunnerContentEvent> {
+  cancelPick();
+
+  return new Promise((resolve) => {
+    document.body.style.cursor = 'crosshair';
+    let hovered: HTMLElement | null = null;
+
+    const clearHover = () => {
+      if (hovered) {
+        hovered.style.outline = '';
+        hovered.style.outlineOffset = '';
+        hovered = null;
+      }
+    };
+
+    const onMouseOver = (event: MouseEvent) => {
+      const target = event.composedPath()[0];
+      if (!(target instanceof HTMLElement) || target === hovered) return;
+      clearHover();
+      hovered = target;
+      hovered.style.outline = '2px solid #ffc107';
+      hovered.style.outlineOffset = '1px';
+    };
+
+    const onClick = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.composedPath()[0];
+      if (!(target instanceof Element)) return;
+      const selector = generateSelector(target);
+      const framePath = computeFramePath(window);
+      finish({
+        type: 'aitomate:runner:element-picked',
+        selector: framePath?.length ? { ...selector, framePath } : selector,
+      });
+    };
+
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      finish({ type: 'aitomate:runner:pick-cancelled' });
+    };
+
+    const finish = (result: RunnerContentEvent) => {
+      cancelPick();
+      resolve(result);
+    };
+
+    document.addEventListener('mouseover', onMouseOver, { capture: true });
+    document.addEventListener('click', onClick, { capture: true });
+    document.addEventListener('keydown', onKeydown, { capture: true });
+
+    pickCleanup = () => {
+      document.body.style.cursor = '';
+      clearHover();
+      document.removeEventListener('mouseover', onMouseOver, { capture: true });
+      document.removeEventListener('click', onClick, { capture: true });
+      document.removeEventListener('keydown', onKeydown, { capture: true });
+    };
+  });
+}
+
+function cancelPick(): void {
+  pickCleanup?.();
+  pickCleanup = null;
 }
 
 // ─────────────────────────────────────────────

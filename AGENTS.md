@@ -4,7 +4,7 @@ Browser extension for collaborative, AI-assisted test automation. Works on any
 web app (server-rendered or SPA); Laravel apps are the reference targets, not a
 dependency.
 
-**Source of truth: `aitomate-spec-kit.md` (v0.3.2).** If anything here or in a
+**Source of truth: `aitomate-spec-kit.md` (v0.3.3).** If anything here or in a
 conversation contradicts the spec, the spec wins. Update the spec when a design
 decision changes; bump its version and changelog.
 
@@ -30,7 +30,9 @@ Full narrative history, rationale, and bug post-mortems per task:
   JSON/HTML export · T4.4 first-run onboarding wizard · T4.5 Firefox/Edge
   polyfill audit · Base URL / `{{BASE_URL}}` resolution (+ Run view
   progress, PO/dev handoff) · Edit-existing-scenario · Scenario slugs
-  (dedupe by slug, not name).
+  (dedupe by slug, not name) · Build view "Pick element" (devtools-style
+  point-and-click selector capture, PO/QA-friendly) · recorder stop-drops-
+  steps fix (generation-token guard, see Common Mistakes below).
 - Next: remaining spec §4 milestone items (Milestone 2: database/bridge,
   Milestone 3: plugins & release — see spec §4).
 - Task list and milestone breakdown: spec §4.
@@ -227,6 +229,18 @@ own diff against this list before calling a task done.
   decision — mount check *and* hide-on-complete — and have the parent
   render it unconditionally. Caught in T4.4 (`RunView.tsx` and
   `OnboardingWizard.tsx` both read `aitomate:onboarding` independently).
+- **A fire-and-forget content→background message racing a command that
+  changes gate state.** `content.ts`'s `sendStep` never awaits its
+  `sendMessage`; if a user's Stop click reaches `background.ts` first, a
+  still-in-flight `step-captured` for the last action(s) arrives after
+  `session.status` has already flipped to `'idle'`, and a status-based guard
+  silently drops it — no error, no step, and it looks like recording "didn't
+  work" rather than a timing bug. Status is the wrong thing to gate on here;
+  use a monotonic token (bumped only on Start) so a message can be told
+  "still belongs to this session" independent of whether Stop has already
+  been processed. Caught in the recorder (`step-captured` dropped trailing
+  steps on Stop); fixed with `RecorderSessionState.generation`. Full story:
+  `docs/decisions.md` § Recorder stop drops steps.
 
 ## Tooling Notes
 

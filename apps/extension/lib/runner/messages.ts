@@ -27,13 +27,17 @@ export type RunnerCommand =
 export type RunnerContentCommand =
   | { type: 'aitomate:runner:execute-step'; step: Step }
   | { type: 'aitomate:runner:wait-for-dom'; timeoutMs?: number }
-  | { type: 'aitomate:runner:locate-element'; selector: Selector };
+  | { type: 'aitomate:runner:locate-element'; selector: Selector }
+  | { type: 'aitomate:runner:pick-element' }
+  | { type: 'aitomate:runner:cancel-pick' };
 
 /** Content script → background. `sender.tab.id` identifies the tab. */
 export type RunnerContentEvent =
   | { type: 'aitomate:runner:step-executed'; stepId: string; passed: boolean; error?: string }
   | { type: 'aitomate:runner:dom-stable' }
-  | { type: 'aitomate:runner:element-located'; found: boolean; error?: string };
+  | { type: 'aitomate:runner:element-located'; found: boolean; error?: string }
+  | { type: 'aitomate:runner:element-picked'; selector: Selector }
+  | { type: 'aitomate:runner:pick-cancelled' };
 
 /**
  * Background → UI (popup/sidepanel), broadcast on every state change.
@@ -57,6 +61,13 @@ export type RunnerRunReportMessage = {
   type: 'aitomate:runner:run-report';
   tabId: number;
   report: RunReport;
+};
+
+/** Background → UI, broadcast after each individual step executes. */
+export type RunnerStepResultMessage = {
+  type: 'aitomate:runner:step-result';
+  tabId: number;
+  result: StepResult;
 };
 
 export interface StepResult {

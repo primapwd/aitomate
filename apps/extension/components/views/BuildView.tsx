@@ -55,6 +55,7 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
   );
   const [incompleteError, setIncompleteError] = useState('');
   const [locateError, setLocateError] = useState('');
+  const [pickingIndex, setPickingIndex] = useState<number | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const mounted = useRef(true);
 
@@ -248,6 +249,45 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
     [steps],
   );
 
+  const handlePick = useCallback(
+    async (index: number) => {
+      const step = steps[index];
+      if (!step) return;
+      const currentSelector = stepSelector(step);
+      if (!currentSelector) return;
+      setLocateError('');
+      setPickingIndex(index);
+      try {
+        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) {
+          setLocateError('No active tab found. Open the page first.');
+          return;
+        }
+        const response = (await browser.tabs.sendMessage(tab.id, {
+          type: 'aitomate:runner:pick-element',
+        } satisfies RunnerContentCommand)) as RunnerContentEvent | undefined;
+        if (response?.type === 'aitomate:runner:element-picked') {
+          updateStep(index, { selector: response.selector } as Partial<Step>);
+        }
+      } catch {
+        setLocateError('Could not reach the page — open/reload it and try again.');
+      } finally {
+        setPickingIndex(null);
+      }
+    },
+    [steps, updateStep],
+  );
+
+  const handleCancelPick = useCallback(async () => {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) {
+      void browser.tabs.sendMessage(tab.id, {
+        type: 'aitomate:runner:cancel-pick',
+      } satisfies RunnerContentCommand);
+    }
+    setPickingIndex(null);
+  }, []);
+
   const selectMode = (next: BuildMode) => {
     setMode(next);
     void setUiPref('buildMode', next);
@@ -385,6 +425,9 @@ export default function BuildView({ editScenarioId, onEditConsumed }: BuildViewP
         onMove={moveStep}
         onAdd={addStep}
         onLocate={handleLocate}
+        onPick={handlePick}
+        onCancelPick={handleCancelPick}
+        pickingIndex={pickingIndex}
       />
 
       {locateError && (

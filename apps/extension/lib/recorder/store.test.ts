@@ -15,25 +15,29 @@ beforeEach(() => {
 describe('recorder store', () => {
   it('returns an idle, empty recording for an unknown tab', async () => {
     const recording = await getRecording(42);
-    expect(recording).toEqual({ session: { status: 'idle' }, steps: [] });
+    expect(recording).toEqual({ session: { status: 'idle', generation: 0 }, steps: [] });
   });
 
   it('persists a recording across a service-worker restart (cache wiped)', async () => {
     const recording = await getRecording(7);
-    recording.session = { status: 'recording', originUrl: 'https://app.test' };
+    recording.session = { status: 'recording', originUrl: 'https://app.test', generation: 1 };
     recording.steps.push({ id: 'step-1', action: 'navigate', url: 'https://app.test/cart' });
     await saveRecording(7, recording);
 
     resetRecordingCache(); // simulate MV3 worker teardown
 
     const revived = await getRecording(7);
-    expect(revived.session).toEqual({ status: 'recording', originUrl: 'https://app.test' });
+    expect(revived.session).toEqual({
+      status: 'recording',
+      originUrl: 'https://app.test',
+      generation: 1,
+    });
     expect(revived.steps).toHaveLength(1);
   });
 
   it('isolates recordings per tab', async () => {
     const a = await getRecording(1);
-    a.session = { status: 'recording', originUrl: 'https://a.test' };
+    a.session = { status: 'recording', originUrl: 'https://a.test', generation: 1 };
     await saveRecording(1, a);
 
     const b = await getRecording(2);
@@ -42,7 +46,7 @@ describe('recorder store', () => {
 
   it('clears a recording when its tab closes', async () => {
     const recording = await getRecording(9);
-    recording.session = { status: 'recording', originUrl: 'https://app.test' };
+    recording.session = { status: 'recording', originUrl: 'https://app.test', generation: 1 };
     await saveRecording(9, recording);
 
     await clearRecording(9);

@@ -12,6 +12,9 @@ interface Props {
   onMove: (from: number, to: number) => void;
   onAdd: (action: ManualStepAction) => void;
   onLocate?: (index: number) => void;
+  onPick?: (index: number) => void;
+  onCancelPick?: () => void;
+  pickingIndex?: number | null;
 }
 
 const ACTION_ICONS: Record<ManualStepAction, React.ReactNode> = {
@@ -30,7 +33,18 @@ const ACTION_LABELS: Record<ManualStepAction, string> = {
   assert: 'Assert',
 };
 
-export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, onAdd, onLocate }: Props) {
+export default function StepList({
+  steps,
+  advanced,
+  onUpdate,
+  onDelete,
+  onMove,
+  onAdd,
+  onLocate,
+  onPick,
+  onCancelPick,
+  pickingIndex,
+}: Props) {
   return (
     <div>
       {steps.length === 0 && (
@@ -78,6 +92,9 @@ export default function StepList({ steps, advanced, onUpdate, onDelete, onMove, 
           onMoveUp={i > 0 ? () => onMove(i, i - 1) : null}
           onMoveDown={i < steps.length - 1 ? () => onMove(i, i + 1) : null}
           onLocate={onLocate && stepSelector(step) ? () => onLocate(i) : undefined}
+          onPick={onPick && stepSelector(step) ? () => onPick(i) : undefined}
+          picking={pickingIndex === i}
+          onCancelPick={onCancelPick}
         />
       ))}
 

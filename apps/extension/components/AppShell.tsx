@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { browser } from 'wxt/browser';
 import RunView from './views/RunView';
 import BuildView from './views/BuildView';
 import SettingsView from './views/SettingsView';
@@ -74,7 +75,7 @@ export default function AppShell({ variant = 'popup' }: AppShellProps) {
                 Aitomate
               </span>
               <span className="ait-badge ait-badge-primary" style={{ fontSize: 9, padding: '1px 5px' }}>
-                v0.3.5
+                v{browser.runtime.getManifest().version}
               </span>
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>

@@ -13,7 +13,7 @@ export type RecorderCommand =
 
 /** Content script -> background. `sender.tab.id` identifies the tab. */
 export type RecorderEvent =
-  | { type: 'aitomate:recorder:step-captured'; step: Step }
+  | { type: 'aitomate:recorder:step-captured'; step: Step; generation: number }
   | { type: 'aitomate:recorder:get-state' };
 
 /** Background -> content script(s) in a tab, broadcast on every state change. */

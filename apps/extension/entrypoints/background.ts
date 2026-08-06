@@ -15,7 +15,7 @@ import {
   saveRecording,
   type TabRecording,
 } from '@/lib/recorder/store';
-import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
+import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerStepResultMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
 import { findScenarioByName, listScenarios } from '@/lib/import-export';
 import { runSuite, type SuiteReport, type SuiteScenarioRef } from '@/lib/runner/suite';
 import { runSetup } from '@/lib/runner/chaining';
@@ -135,6 +135,19 @@ async function broadcastRunReport(tabId: number, report: RunReport): Promise<voi
   }
 }
 
+async function broadcastStepResult(tabId: number, result: StepResult): Promise<void> {
+  const message: RunnerStepResultMessage = {
+    type: 'aitomate:runner:step-result',
+    tabId,
+    result,
+  };
+  try {
+    await browser.runtime.sendMessage(message);
+  } catch {
+    // No panel listening — fine.
+  }
+}
+
 interface RunOutcome {
   passed: boolean;
   error?: string;
@@ -223,6 +236,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
     );
 
     run.results.push(result);
+    await broadcastStepResult(tabId, result);
 
     if (!result.passed) {
       debugLog('run-seq', `step ${i} FAILED: ${result.error}`);
@@ -296,7 +310,12 @@ export default defineBackground(() => {
           const tabId = sender.tab?.id;
           if (tabId === undefined) return;
           return getRecording(tabId).then(async (recording) => {
-            if (recording.session.status !== 'recording') return;
+            // Compare generation, not status: content's sendStep is a
+            // fire-and-forget message, so a step captured just before Stop
+            // can arrive after background already flipped to idle. Status
+            // is unreliable for that race; generation only changes on a new
+            // START, so a same-generation step is always still valid.
+            if (message.generation !== recording.session.generation) return;
             recording.steps.push({ ...message.step, id: nextStepId(recording) } as Step);
             await saveRecording(tabId, recording);
             // Let an open side panel show the new step live.

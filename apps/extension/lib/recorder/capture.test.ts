@@ -132,12 +132,17 @@ describe('valueOfControl', () => {
  *   if (step) recording.steps.push({ id: nextStepId(recording), ...step });
  */
 describe('captureNavigation', () => {
-  const recording: RecorderSessionState = { status: 'recording', originUrl: 'https://a.test/' };
-  const idle: RecorderSessionState = { status: 'idle' };
+  const recording: RecorderSessionState = {
+    status: 'recording',
+    originUrl: 'https://a.test/',
+    generation: 1,
+  };
+  const idle: RecorderSessionState = { status: 'idle', generation: 0 };
   const paused: RecorderSessionState = {
     status: 'paused',
     originUrl: 'https://a.test/',
     pauseReason: 'origin-change',
+    generation: 1,
   };
 
   it('returns no step when not currently recording', () => {
@@ -155,7 +160,11 @@ describe('captureNavigation', () => {
   it('appends a navigate step for a same-origin URL change while recording', () => {
     const result = captureNavigation(recording, 'https://a.test/checkout');
     expect(result.step).toEqual(buildNavigateStep('https://a.test/checkout'));
-    expect(result.session).toEqual({ status: 'recording', originUrl: 'https://a.test/checkout' });
+    expect(result.session).toEqual({
+      status: 'recording',
+      originUrl: 'https://a.test/checkout',
+      generation: 1,
+    });
   });
 
   it('returns no step for a no-op navigation to the same URL', () => {
@@ -179,6 +188,7 @@ describe('captureNavigation', () => {
       status: 'paused',
       originUrl: 'https://a.test/',
       pauseReason: 'origin-change',
+      generation: 1,
     });
   });
 });

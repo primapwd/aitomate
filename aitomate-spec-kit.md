@@ -730,13 +730,13 @@ Each task is scoped to be handed independently to an AI coding agent.
 - [x] T3.3: LLM provider settings UI + PO-friendly error handling for AI failures.
 
 **Phase 4: Reporting & PO/QA UX**
-- [ ] T4.1: Run report data model (step results, screenshots on failure, timing,
+- [x] T4.1: Run report data model (step results, screenshots on failure, timing,
   console/network errors).
-- [ ] T4.2: Run view UI: simplified pass/fail summary + expandable step detail
+- [x] T4.2: Run view UI: simplified pass/fail summary + expandable step detail
   (Advanced toggle reveals selectors).
-- [ ] T4.3: Export report as JSON/HTML.
-- [ ] T4.4: First-run onboarding wizard (zero-setup static path).
-- [ ] T4.5: Firefox/Edge build verification + polyfill audit.
+- [x] T4.3: Export report as JSON/HTML.
+- [x] T4.4: First-run onboarding wizard (zero-setup static path).
+- [x] T4.5: Firefox/Edge build verification + polyfill audit.
 
 ### Milestone 2 — Database & Team Config
 - [ ] T5.1: `packages/bridge` → `aitomate-bridge` CLI: connector profiles,

@@ -199,6 +199,11 @@ input, select, textarea, button {
   border-radius: var(--radius-sm);
 }
 
+.ait-btn-active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--accent-primary);
+}
+
 /* Animations */
 @keyframes pulse-ring {
   0% {

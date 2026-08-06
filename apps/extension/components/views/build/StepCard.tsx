@@ -25,10 +25,25 @@ interface Props {
   onMoveUp: (() => void) | null;
   onMoveDown: (() => void) | null;
   onLocate?: () => void;
+  onPick?: () => void;
+  picking?: boolean;
+  onCancelPick?: () => void;
 }
 
 export default function StepCard(props: Props) {
-  const { step, index, advanced, onDelete, onUpdate, onMoveUp, onMoveDown, onLocate } = props;
+  const {
+    step,
+    index,
+    advanced,
+    onDelete,
+    onUpdate,
+    onMoveUp,
+    onMoveDown,
+    onLocate,
+    onPick,
+    picking,
+    onCancelPick,
+  } = props;
   const description = describeStep(step, advanced ?? false);
 
   const actionColors: Record<string, { bg: string; border: string; text: string }> = {
@@ -117,9 +132,46 @@ export default function StepCard(props: Props) {
               highlight
             />
           )}
+          {onPick && (
+            <MiniBtn
+              onClick={onPick}
+              label="Pick element by clicking on the page"
+              symbol={<IconCrosshair size={12} color="#34d399" />}
+              highlight
+            />
+          )}
           <MiniBtn onClick={onDelete} label="Delete step" symbol={<IconTrash size={12} />} danger />
         </div>
       </div>
+
+      {picking && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: '6px 10px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'rgba(52, 211, 153, 0.12)',
+            border: '1px solid rgba(52, 211, 153, 0.35)',
+            fontSize: 11,
+            color: '#34d399',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <span>Click the element on the page to target it (Esc to cancel)…</span>
+          {onCancelPick && (
+            <button
+              onClick={onCancelPick}
+              className="ait-btn ait-btn-secondary ait-btn-sm"
+              style={{ fontSize: 10, padding: '2px 8px' }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Inline Editors */}
       {!advanced && step.action === 'fill' && step.resolver.type === 'static' && (
@@ -594,7 +646,7 @@ function StepIcon({ action }: { action: string }) {
   }
 }
 
-function describeStep(step: Step, advanced: boolean): string {
+export function describeStep(step: Step, advanced: boolean): string {
   const label = (sel: { strategy: string; value: string }) => selectorLabel(sel, advanced);
   switch (step.action) {
     case 'navigate':

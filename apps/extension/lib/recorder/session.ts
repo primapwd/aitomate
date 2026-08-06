@@ -13,6 +13,13 @@ export interface RecorderSessionState {
   status: RecorderStatus;
   originUrl?: string;
   pauseReason?: PauseReason;
+  /**
+   * Bumped only on START. Lets background accept a step-captured message
+   * that was in flight when STOP was processed (content's status flips to
+   * idle asynchronously, on its own broadcast delivery) while still
+   * rejecting a stale step from a since-replaced recording session.
+   */
+  generation: number;
 }
 
 export type SessionEvent =
@@ -22,7 +29,7 @@ export type SessionEvent =
   | { type: 'NEW_TAB_OPENED' }
   | { type: 'RESUME'; originUrl?: string };
 
-export const initialSessionState: RecorderSessionState = { status: 'idle' };
+export const initialSessionState: RecorderSessionState = { status: 'idle', generation: 0 };
 
 function sameOrigin(a: string, b: string): boolean {
   try {
@@ -39,10 +46,10 @@ export function reduceSession(
 ): RecorderSessionState {
   switch (event.type) {
     case 'START':
-      return { status: 'recording', originUrl: event.originUrl };
+      return { status: 'recording', originUrl: event.originUrl, generation: state.generation + 1 };
 
     case 'STOP':
-      return { status: 'idle' };
+      return { ...state, status: 'idle' };
 
     case 'NAVIGATE': {
       if (state.status !== 'recording') return state;
@@ -61,7 +68,12 @@ export function reduceSession(
 
     case 'RESUME': {
       if (state.status !== 'paused') return state;
-      return { status: 'recording', originUrl: event.originUrl ?? state.originUrl };
+      return {
+        ...state,
+        status: 'recording',
+        originUrl: event.originUrl ?? state.originUrl,
+        pauseReason: undefined,
+      };
     }
 
     default:

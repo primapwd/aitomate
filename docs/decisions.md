@@ -334,3 +334,60 @@ shared `saveScenarioDeduped(scenario, confirmOverwrite)` in
 `RunView.handleImport`, `OnboardingWizard.handleImportScenario`) through it.
 `BuildView.tsx` gained a Slug field that auto-derives from Name via
 `slugify()` until the user edits the slug directly.
+
+## Recorder stop drops steps
+
+Bug report: user records several steps, clicks Stop, and the Build view's
+step list (and the saved scenario) comes back empty — none of the performed
+actions were captured.
+
+Root cause: `content.ts`'s `sendStep()` is a fire-and-forget
+`browser.runtime.sendMessage()` call — no `await`, no ack. `background.ts`'s
+`step-captured` handler gated on `recording.session.status === 'recording'`
+before appending a step. Stop is a separate message
+(`aitomate:recorder:stop`) sent from the popup/side panel, and nothing
+serializes it against in-flight `step-captured` messages from the content
+script. If Stop's handler ran first (flipping `status` to `'idle'` and
+broadcasting), a `step-captured` message already in flight for the last
+action(s) arrived afterward and was silently dropped by the status guard —
+no error, no step, and depending on how quickly the user stopped after their
+last action, this could eat most or all of the session.
+
+Fix: `RecorderSessionState` gained a `generation: number` field, bumped only
+on `START` (`reduceSession`, `lib/recorder/session.ts`). `content.ts`'s
+`sendStep()` now stamps the step-captured message with
+`recorderState.generation` (its locally mirrored copy, updated by the
+`aitomate:recorder:state` broadcast). `background.ts`'s handler compares
+`message.generation === recording.session.generation` instead of checking
+`status` — a step captured just before Stop still matches the current
+generation (Stop doesn't bump it) and gets appended, while a stray step from
+a since-replaced (Stop → Start again) session has a stale generation and is
+correctly rejected. `STOP`/`RESUME` were changed to spread the prior state
+(`{ ...state, status: 'idle' }`) instead of constructing a fresh object, so
+`generation` (and `originUrl`) survive those transitions — `RESUME`
+explicitly clears `pauseReason` to keep its existing contract.
+
+## Build view "Pick element"
+
+Gap: Build view had no way for a non-technical PO/QA to get a selector onto
+a step without already knowing devtools/DOM inspection — T2.12's "Locate on
+page" only goes the other direction (given a step's selector, highlight the
+matching element to confirm it's right).
+
+Added the reverse: a "Pick element" button per step (`StepCard.tsx`, next to
+the existing Locate button, same icon family in green) sends
+`{ type: 'aitomate:runner:pick-element' }` to the active tab's content
+script (mirrors Locate's direct `tabs.sendMessage` pattern — no background
+hop needed). `content.ts`'s `handlePickElement()` puts the page into a
+one-shot picking mode: hover outlines whatever element is under the cursor,
+the next click (captured, `preventDefault`/`stopPropagation`'d so the page
+itself doesn't react) resolves with `generateSelector(target)` via
+`element-picked`; Escape resolves `pick-cancelled`. Runs via the existing
+`allFrames: true` content script instance in every frame — unlike
+`execute-step`'s frame-guard requirement (one *known* target frame must
+answer), picking has no known target frame in advance, so "whichever frame
+the user actually clicks in" is the correct answer, not a race to guard
+against. `BuildView.tsx` writes the returned selector into the step via the
+existing `updateStep()` path (same one the Advanced selector editor uses),
+so Simple mode users get a working selector without ever seeing selector
+syntax.

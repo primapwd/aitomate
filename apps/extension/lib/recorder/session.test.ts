@@ -7,7 +7,11 @@ describe('reduceSession', () => {
       type: 'START',
       originUrl: 'https://app.test/checkout',
     });
-    expect(state).toEqual({ status: 'recording', originUrl: 'https://app.test/checkout' });
+    expect(state).toEqual({
+      status: 'recording',
+      originUrl: 'https://app.test/checkout',
+      generation: 1,
+    });
   });
 
   it('stays recording on a same-origin navigation, rebasing to the new url', () => {
@@ -37,6 +41,7 @@ describe('reduceSession', () => {
       status: 'paused',
       originUrl: 'https://app.test/checkout',
       pauseReason: 'origin-change',
+      generation: 1,
     });
   });
 
@@ -70,14 +75,29 @@ describe('reduceSession', () => {
       type: 'RESUME',
       originUrl: 'https://app.test/next',
     });
-    expect(resumed).toEqual({ status: 'recording', originUrl: 'https://app.test/next' });
+    expect(resumed).toEqual({
+      status: 'recording',
+      originUrl: 'https://app.test/next',
+      generation: 1,
+    });
   });
 
-  it('stops recording and resets to idle', () => {
+  it('stops recording and resets to idle, keeping the same generation', () => {
     const recording = reduceSession(initialSessionState, {
       type: 'START',
       originUrl: 'https://app.test',
     });
-    expect(reduceSession(recording, { type: 'STOP' })).toEqual({ status: 'idle' });
+    expect(reduceSession(recording, { type: 'STOP' })).toEqual({
+      status: 'idle',
+      originUrl: 'https://app.test',
+      generation: 1,
+    });
+  });
+
+  it('bumps generation on every START, so a stale in-flight step from a prior session can be told apart', () => {
+    const first = reduceSession(initialSessionState, { type: 'START', originUrl: 'https://a' });
+    const stopped = reduceSession(first, { type: 'STOP' });
+    const second = reduceSession(stopped, { type: 'START', originUrl: 'https://a' });
+    expect(second.generation).toBe(2);
   });
 });

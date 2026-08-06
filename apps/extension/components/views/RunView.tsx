@@ -13,9 +13,11 @@ import {
 import type { RunReport } from '@/lib/runner/report';
 import { downloadReport } from '@/lib/runner/report-export';
 import OnboardingWizard from '@/components/OnboardingWizard';
-import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
+import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerStepResultMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
+import type { StepResult } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
 import { getUiPrefs, setUiPref } from '@/lib/ui-prefs';
+import { describeStep } from '@/components/views/build/StepCard';
 import {
   IconAlert,
   IconCheck,
@@ -23,6 +25,7 @@ import {
   IconCross,
   IconDownload,
   IconEdit,
+  IconEye,
   IconGlobe,
   IconLayers,
   IconPlay,
@@ -47,6 +50,8 @@ export default function RunView({ onEdit }: RunViewProps) {
   const [reportAdvanced, setReportAdvanced] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [stepProgress, setStepProgress] = useState<{ index: number; total: number } | null>(null);
+  const [viewStepsId, setViewStepsId] = useState<string | null>(null);
+  const [stepResults, setStepResults] = useState<Record<string, StepResult>>({});
   const runTabIdRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
@@ -69,7 +74,7 @@ export default function RunView({ onEdit }: RunViewProps) {
 
   useEffect(() => {
     const handler = (msg: unknown) => {
-      const m = msg as RunnerStateMessage | RunnerRunReportMessage | RunnerSuiteStateMessage;
+      const m = msg as RunnerStateMessage | RunnerRunReportMessage | RunnerStepResultMessage | RunnerSuiteStateMessage;
       if (m.type === 'aitomate:runner:state' && m.tabId === runTabId && !suiteRunning) {
         if (m.state.status === 'done' || m.state.status === 'error' || m.state.status === 'idle') {
           setRunningId(null);
@@ -86,6 +91,9 @@ export default function RunView({ onEdit }: RunViewProps) {
           setStepProgress(null);
         }
       }
+      if (m.type === 'aitomate:runner:step-result' && m.tabId === runTabIdRef.current) {
+        setStepResults((prev) => ({ ...prev, [m.result.stepId]: m.result }));
+      }
       if (m.type === 'aitomate:runner:run-report' && m.tabId === runTabIdRef.current) {
         setRunReport(m.report);
       }
@@ -96,6 +104,7 @@ export default function RunView({ onEdit }: RunViewProps) {
         setRunTabId(null);
         setRunReport(null);
         setStepProgress(null);
+        setStepResults({});
       }
     };
     browser.runtime.onMessage.addListener(handler);
@@ -134,6 +143,7 @@ export default function RunView({ onEdit }: RunViewProps) {
       setImportError('');
       setRunningId(entry.id);
       setStepProgress(null);
+      setStepResults({});
       try {
         const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) {
@@ -172,6 +182,7 @@ export default function RunView({ onEdit }: RunViewProps) {
       setRunningId(null);
       setRunTabId(null);
       setStepProgress(null);
+      setStepResults({});
     }
   }, [runTabId]);
 
@@ -495,6 +506,15 @@ export default function RunView({ onEdit }: RunViewProps) {
                       )}
 
                       <button
+                        onClick={() => setViewStepsId(viewStepsId === entry.id ? null : entry.id)}
+                        disabled={isRunning || suiteRunning}
+                        className={`ait-btn ait-btn-secondary ait-btn-icon ${viewStepsId === entry.id ? 'ait-btn-active' : ''}`}
+                        title={viewStepsId === entry.id ? 'Hide steps' : 'View steps'}
+                      >
+                        <IconEye size={12} color="var(--text-secondary)" />
+                      </button>
+
+                      <button
                         onClick={() => onEdit?.(entry.id)}
                         disabled={isRunning || suiteRunning}
                         className="ait-btn ait-btn-secondary ait-btn-icon"
@@ -537,6 +557,99 @@ export default function RunView({ onEdit }: RunViewProps) {
                           Action: <code style={{ color: '#a5b4fc' }}>{entry.scenario.steps[stepProgress.index].action}</code>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Read-only steps view (no edit) */}
+                  {viewStepsId === entry.id && (
+                    <div
+                      className="animate-fade-in"
+                      style={{
+                        marginTop: 8,
+                        paddingTop: 6,
+                        borderTop: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3,
+                      }}
+                    >
+                      {entry.scenario.steps.length === 0 && (
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          No steps in this scenario.
+                        </div>
+                      )}
+                      {entry.scenario.steps.map((step, i) => {
+                        const result = stepResults[step.id];
+                        const isCurrent = isRunning && stepProgress?.index === i;
+                        const statusColor = result
+                          ? result.passed
+                            ? 'var(--status-success)'
+                            : 'var(--status-error)'
+                          : isCurrent
+                            ? 'var(--accent-primary)'
+                            : 'var(--text-muted)';
+                        return (
+                          <div
+                            key={step.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: 11,
+                              padding: '3px 6px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: result
+                                ? result.passed
+                                  ? 'rgba(46, 125, 50, 0.08)'
+                                  : 'rgba(244, 63, 94, 0.08)'
+                                : isCurrent
+                                  ? 'rgba(99, 102, 241, 0.1)'
+                                  : 'rgba(255,255,255,0.03)',
+                            }}
+                          >
+                            {result ? (
+                              <span
+                                style={{
+                                  width: 16,
+                                  flexShrink: 0,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: statusColor,
+                                  textAlign: 'center',
+                                }}
+                              >
+                                {result.passed ? '✓' : '✕'}
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  width: 16,
+                                  color: isCurrent ? 'var(--accent-primary)' : 'var(--text-muted)',
+                                  flexShrink: 0,
+                                  fontSize: 10,
+                                }}
+                              >
+                                {i + 1}.
+                              </span>
+                            )}
+                            <span
+                              style={{
+                                color: result
+                                  ? result.passed
+                                    ? 'var(--text-primary)'
+                                    : 'var(--status-error)'
+                                  : 'var(--text-primary)',
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {describeStep(step, false)}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -599,8 +712,9 @@ export default function RunView({ onEdit }: RunViewProps) {
           </div>
         )}
 
-        {/* Individual Run Report Card */}
-        {runReport && (
+        {/* Individual Run Report Card — hidden while steps are expanded (the
+            expanded list already shows per-step ✓/✕ live statuses) */}
+        {runReport && !viewStepsId && (
           <div
             className="ait-card animate-fade-in"
             style={{
