@@ -17,7 +17,11 @@ test('popup renders the Build/Run/Settings shell, defaulting to Run', async ({
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
 
-  await expect(page.getByRole('heading', { name: 'Aitomate', exact: true })).toBeVisible();
+  // The 0.4.1 redesign moved the app name into the header banner (text, not
+  // a heading) and the first-run wizard owns the page's only heading. Assert
+  // the banner text — the shell's stable identity — instead of an exact
+  // "Aitomate" heading that no longer exists.
+  await expect(page.getByText('AI Test Automation', { exact: true })).toBeVisible();
 
   // Dismiss the first-run onboarding wizard (T4.4)
   const skipBtn = page.getByRole('button', { name: 'Skip' });
@@ -31,7 +35,7 @@ test('popup renders the Build/Run/Settings shell, defaulting to Run', async ({
   await expect(settingsTab).toBeVisible();
   await expect(runTab).toHaveAttribute('aria-current', 'page');
 
-  await expect(page.getByText('Import a scenario and run it')).toBeVisible();
+  await expect(page.getByText('No scenario loaded yet')).toBeVisible();
 
   await buildTab.click();
   await expect(buildTab).toHaveAttribute('aria-current', 'page');

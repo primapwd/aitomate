@@ -13,19 +13,56 @@ import { debugLog } from '@/lib/debug';
  *
  * Each step goes through:
  *   1. Smart-wait: send `wait-for-dom` to content script; resolves when DOM
- *      has been stable for a grace period or the timeout fires.
+ *      has been stable for a grace period or the step timeout fires. A
+ *      rejected send means "no content script listener yet" (post-navigation
+ *      injection race, error page, extension reload) — re-probed (each probe
+ *      carrying only the *remaining* budget) until the step timeout instead
+ *      of surfacing the raw browser error.
  *   2. Execute: send `execute-step` to content script; the content script
  *      performs the actual DOM interaction (T2.4 extends this with
  *      React/Vue/shadow-DOM/iframe support).
  *   3. Retry on failure: exponential backoff with jitter, up to the step's
- *      configured retry count (default 3).
+ *      configured retry count (default 3). The retry budget covers *action*
+ *      failures; an unreachable content script fails fast after the
+ *      smart-wait horizon (attempts would only burn time on a page that
+ *      cannot answer).
  *
  * The content-script response (`passed: boolean`) drives retry logic here.
+ * `durationMs` is the step's total elapsed time across all attempts.
  */
 
 export const DEFAULT_RETRY_COUNT = 3;
 export const DEFAULT_BACKOFF_MS = 1000;
 export const DEFAULT_DOM_WAIT_TIMEOUT_MS = 30_000;
+
+/** Re-probe interval while waiting for the content script to become reachable. */
+export const CONTENT_SCRIPT_PROBE_MS = 300;
+
+/** Run was stopped while the smart-wait probe was waiting. */
+class RunAbortedError extends Error {
+  constructor() {
+    super('Run stopped');
+    this.name = 'RunAbortedError';
+  }
+}
+
+/**
+ * The content script never became reachable within the smart-wait horizon.
+ * The content-side stability wait never rejects (it resolves on stability or
+ * its own timeout), so a `wait-for-dom` rejection always means "no listener
+ * right now" — and if that persists for the whole horizon, the page will
+ * never answer (error page, extension reloaded, tab killed).
+ */
+class ContentScriptUnreachableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `The page's content script could not be reached${
+        cause !== undefined ? ` (${String(cause)})` : ''
+      }`,
+    );
+    this.name = 'ContentScriptUnreachableError';
+  }
+}
 
 /**
  * Core public API: execute a single step against the given tab, with retry.
@@ -119,6 +156,11 @@ async function executeDomStep(
 ): Promise<StepResult> {
   const timeoutMs = step.options?.timeoutMs ?? DEFAULT_DOM_WAIT_TIMEOUT_MS;
 
+  // Total step time (all attempts + backoff), not just the last attempt —
+  // a step that exhausted 3 retries over 3.5s of backoff must report that.
+  const stepStartedAt = performance.now();
+  const elapsed = () => Math.round(performance.now() - stepStartedAt);
+
   // Resolve dynamic/AI/DB values once before the retry loop (T2.3). The
   // content script receives a static resolver and never needs to know about
   // resolver modes. On retry the same resolved value is reused. Resolution
@@ -132,7 +174,7 @@ async function executeDomStep(
       passed: false,
       error: err instanceof Error ? err.message : String(err),
       attempts: 0,
-      durationMs: 0,
+      durationMs: elapsed(),
     };
   }
 
@@ -146,15 +188,35 @@ async function executeDomStep(
         passed: false,
         error: 'Run stopped',
         attempts: attempt - 1,
-        durationMs: 0,
+        durationMs: elapsed(),
       };
     }
 
-    const startTime = performance.now();
-
     try {
-      await waitForDomStability(tabId, timeoutMs);
+      await waitForDomStability(tabId, timeoutMs, signal);
     } catch (err) {
+      if (err instanceof RunAbortedError) {
+        return {
+          stepId: step.id,
+          passed: false,
+          error: err.message,
+          attempts: attempt - 1,
+          durationMs: elapsed(),
+        };
+      }
+      if (err instanceof ContentScriptUnreachableError) {
+        // The precondition (reachable + stable DOM) can never be satisfied
+        // on this page — the content script never answered within the step
+        // timeout. Re-looping would burn the action's retry budget on a page
+        // that will not respond. Fail loud with the real elapsed time.
+        return {
+          stepId: step.id,
+          passed: false,
+          error: `DOM stability check failed: ${err.message}`,
+          attempts: attempt,
+          durationMs: elapsed(),
+        };
+      }
       lastError = `DOM stability check failed: ${String(err)}`;
       if (attempt < maxRetries) {
         await backoff(baseBackoff, attempt);
@@ -173,7 +235,7 @@ async function executeDomStep(
           stepId: step.id,
           passed: true,
           attempts: attempt,
-          durationMs: Math.round(performance.now() - startTime),
+          durationMs: elapsed(),
         };
       }
 
@@ -194,22 +256,51 @@ async function executeDomStep(
     passed: false,
     error: lastError,
     attempts: maxRetries,
-    durationMs: 0,
+    durationMs: elapsed(),
   };
 }
 
 /**
  * Smart-wait: asks the content script to report when the DOM has been stable
- * (no mutations for a grace period). Resolves on success; rejects on timeout.
+ * (no mutations for a grace period). Resolves on success.
+ *
+ * The content-side stability wait never rejects (it resolves on stability or
+ * its own timeout), so a rejection here always means "no content script
+ * listener right now" — the classic post-navigation injection race, an error
+ * page, or an extension reload. Listener presence is *eventual* when the
+ * page loads fine, so re-probe instead of surfacing the raw browser
+ * "Receiving end does not exist" and burning the action's retry budget (the
+ * smart-wait already runs before the action loop).
+ *
+ * Each probe carries the *remaining* budget (`timeoutMs - elapsed`), not the
+ * full step timeout — the content script opens a stability window per send,
+ * so a full budget on every probe would extend the effective horizon to
+ * ~2×timeoutMs (probe time + a fresh in-flight window). With the remaining
+ * budget the end-to-end horizon is exactly the step timeout.
  */
 async function waitForDomStability(
   tabId: number,
   timeoutMs: number,
+  signal?: { stopped: () => boolean },
 ): Promise<void> {
-  await browser.tabs.sendMessage(tabId, {
-    type: 'aitomate:runner:wait-for-dom',
-    timeoutMs,
-  } as RunnerContentCommand);
+  const start = Date.now();
+  let lastErr: unknown;
+  while (true) {
+    const remaining = timeoutMs - (Date.now() - start);
+    if (remaining <= 0) break;
+    if (signal?.stopped()) throw new RunAbortedError();
+    try {
+      await browser.tabs.sendMessage(tabId, {
+        type: 'aitomate:runner:wait-for-dom',
+        timeoutMs: remaining,
+      } as RunnerContentCommand);
+      return;
+    } catch (err) {
+      lastErr = err;
+      await sleep(CONTENT_SCRIPT_PROBE_MS);
+    }
+  }
+  throw new ContentScriptUnreachableError(lastErr);
 }
 
 /**

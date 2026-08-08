@@ -367,6 +367,67 @@ correctly rejected. `STOP`/`RESUME` were changed to spread the prior state
 `generation` (and `originUrl`) survive those transitions — `RESUME`
 explicitly clears `pauseReason` to keep its existing contract.
 
+## Smart-wait probe + honest step timing (runner reliability)
+
+Trigger: a manual MVP run of `examples/demo-ssr/test-ssr.aitomate.json`
+(`Demo_SSR___Sign_Up_Full_Flow-report.json`, committed red at repo root)
+failed at `s02` — the first fill after a navigate — with
+`DOM stability check failed: Error: Could not establish connection.
+Receiving end does not exist.`, `attempts: 3`, `durationMs: 0`. Two defects
+in `lib/runner/step-executor.ts` were confirmed by reading the code; a
+clean headless e2e run of the same scenario then passed green (all 31
+steps), showing the historical failure was environmental (demo server not
+up / dev-mode SW teardown during the manual run) on top of the two real
+bugs:
+
+1. **The retry budget was shared between two failure classes that need
+   different handling.** `wait-for-dom` ran inside every attempt. A
+   rejection of that message always means "no content script listener
+   right now" — the content-side stability wait never rejects (it resolves
+   on stability or its own timeout, `content.ts`), so every rejection is a
+   receiver-presence problem (post-navigation injection race, error page,
+   extension reload). Listener presence is *eventual* when the page loads
+   fine, so the correct response is time, not attempts — but the loop
+   burned the action's 3 retries (with backoff) on it and never reached
+   the actual action. Worse, nothing ever *made* the content script
+   appear (no `scripting` permission). Fixed: `waitForDomStability` now
+   re-probes the send every `CONTENT_SCRIPT_PROBE_MS` (300ms) until the
+   step timeout; exhaustion throws `ContentScriptUnreachableError`, which
+   fails the step fast with the real elapsed time instead of re-looping
+   on a page that will never answer. Stop responsiveness preserved: the
+   probe checks the stop signal and aborts via `RunAbortedError`.
+   Follow-up: each probe passes the *remaining* budget
+   (`timeoutMs - elapsed`) as the message's `timeoutMs`, not the full step
+   timeout — the content script opens a stability window per send, so a
+   full budget on every probe would stretch the effective horizon to
+   ~2×timeoutMs (probe time + a fresh in-flight window); with the
+   remaining budget the end-to-end horizon is exactly the step timeout
+   (pinned by fake-timer tests asserting the per-probe payloads
+   `[1000, 700, 400, 100]`).
+2. **`durationMs: 0` was hardcoded** in the exhausted-retry return — the
+   last attempt's measured time was discarded, so *every* failed DOM step
+   reported 0ms regardless of the backoff actually spent (the historical
+   run's 3 attempts really cost ~3.5s of wall time; the report said 0).
+   Fixed: `durationMs` is now the step's total elapsed time across all
+   attempts (success, exhausted, stopped, and fail-fast paths alike).
+
+Tests: `step-executor.test.ts` gained probe-recovery (receiver-missing once
+→ succeeds without consuming action attempts), fail-fast-on-unreachable
+(attempts 1, not the full retry budget, honest `durationMs`),
+probe-aborts-on-stop, and total-durationMs-on-exhaustion; the old
+"sendMessage rejection as a failure" and "default retry count" tests were
+reworked to the new semantics. E2E: a temp spec driving the real demo-ssr
+run from the popup passed green and validated every step's `durationMs >
+0`; deleted afterward — promoting it to the permanent third smoke case
+(§3.7) still needs the Playwright harness to self-serve `examples/demo-ssr`
+on 8081 rather than assuming an external server.
+
+Also fixed en route: `smoke.spec.ts`'s popup assertions were stale against
+the 0.4.1 UI redesign — it asserted an exact "Aitomate" heading and the old
+empty-state copy, neither of which exists anymore (the app name moved to
+banner text; the wizard owns the page's only heading). Now asserts the
+banner text (`AI Test Automation`, exact) and the current empty-state copy.
+
 ## Build view "Pick element"
 
 Gap: Build view had no way for a non-technical PO/QA to get a selector onto

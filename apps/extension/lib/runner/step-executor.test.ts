@@ -34,6 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('executeStepWithRetry', () => {
@@ -46,6 +47,7 @@ describe('executeStepWithRetry', () => {
     expect(result.passed).toBe(true);
     expect(result.attempts).toBe(1);
     expect(result.stepId).toBe('step-1');
+    expect(result.durationMs).toBeGreaterThan(0);
   });
 
   it('retries on failure and succeeds on the 2nd attempt', async () => {
@@ -78,7 +80,13 @@ describe('executeStepWithRetry', () => {
   });
 
   it('uses default retry count when step has no options', async () => {
-    vi.spyOn(browser.tabs, 'sendMessage').mockRejectedValue(new Error('Tab not reachable'));
+    vi.spyOn(browser.tabs, 'sendMessage')
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(false, 'Timeout'))
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(false, 'Timeout'))
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(false, 'Timeout'));
 
     const result = await executeStepWithRetry(TAB_ID, makeStep());
     expect(result.passed).toBe(false);
@@ -95,17 +103,114 @@ describe('executeStepWithRetry', () => {
     expect(result.attempts).toBe(0);
   });
 
-  it('handles sendMessage rejection as a failure', async () => {
-    vi.spyOn(browser.tabs, 'sendMessage')
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('Content script not ready'))
+  it('recovers when the content script is briefly unreachable', async () => {
+    // First wait-for-dom send hits the post-navigation injection race;
+    // the probe re-sends until the content script answers. The action's
+    // retry budget must NOT be consumed by the probe.
+    const sendMessage = vi.spyOn(browser.tabs, 'sendMessage')
+      .mockRejectedValueOnce(new Error('Could not establish connection. Receiving end does not exist.'))
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(executedResponse(true));
 
     const step = makeStep({ options: { retry: { count: 2, backoffMs: 10 } } });
     const result = await executeStepWithRetry(TAB_ID, step);
     expect(result.passed).toBe(true);
+    expect(result.attempts).toBe(1);
+    expect(sendMessage).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails fast when the content script never becomes reachable', async () => {
+    vi.spyOn(browser.tabs, 'sendMessage').mockRejectedValue(
+      new Error('Could not establish connection. Receiving end does not exist.'),
+    );
+
+    const step = makeStep({ options: { timeoutMs: 50 } });
+    const result = await executeStepWithRetry(TAB_ID, step);
+    expect(result.passed).toBe(false);
+    // One smart-wait attempt, not the full action retry budget — re-looping
+    // on a page that will never answer just burns backoff time.
+    expect(result.attempts).toBe(1);
+    expect(result.error).toContain('content script could not be reached');
+    // At least one probe sleep elapsed — the timing is honest now.
+    expect(result.durationMs).toBeGreaterThanOrEqual(250);
+  });
+
+  it('aborts the smart-wait probe when the run is stopped', async () => {
+    vi.spyOn(browser.tabs, 'sendMessage').mockRejectedValue(
+      new Error('Could not establish connection. Receiving end does not exist.'),
+    );
+
+    // First stopped() check is the loop-start guard (passes); the second is
+    // the probe's own check, which aborts mid-wait.
+    let checks = 0;
+    const signal = { stopped: () => ++checks > 1 };
+    const step = makeStep({ options: { timeoutMs: 10_000 } });
+    const result = await executeStepWithRetry(TAB_ID, step, signal);
+    expect(result.passed).toBe(false);
+    expect(result.error).toBe('Run stopped');
+    expect(result.attempts).toBe(0);
+  });
+
+  it('passes the remaining smart-wait budget, not the full timeout, to each probe', async () => {
+    vi.useFakeTimers();
+    const sendMessage = vi.spyOn(browser.tabs, 'sendMessage').mockRejectedValue(
+      new Error('Could not establish connection. Receiving end does not exist.'),
+    );
+
+    const step = makeStep({ options: { timeoutMs: 1000 } });
+    const pending = executeStepWithRetry(TAB_ID, step);
+    await vi.advanceTimersByTimeAsync(1200); // probe sleeps 300ms each iteration
+    const result = await pending;
+
+    // Each probe carries the remaining budget (1000, 700, 400, 100) — a
+    // fresh full timeout on every send would extend the horizon to ~2x.
+    const payloads = sendMessage.mock.calls.map(
+      (call) => (call[1] as { timeoutMs?: number }).timeoutMs,
+    );
+    expect(payloads).toEqual([1000, 700, 400, 100]);
+    expect(result.passed).toBe(false);
+    expect(result.attempts).toBe(1);
+    expect(result.error).toContain('content script could not be reached');
+    vi.useRealTimers();
+  });
+
+  it('gives a recovering content script the remaining budget, not a fresh one', async () => {
+    vi.useFakeTimers();
+    const sendMessage = vi.spyOn(browser.tabs, 'sendMessage')
+      .mockRejectedValueOnce(new Error('Could not establish connection. Receiving end does not exist.'))
+      .mockRejectedValueOnce(new Error('Could not establish connection. Receiving end does not exist.'))
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(true));
+
+    const step = makeStep({ options: { timeoutMs: 1000 } });
+    const pending = executeStepWithRetry(TAB_ID, step);
+    await vi.advanceTimersByTimeAsync(600); // two rejects (300ms apart), third send answers
+    const result = await pending;
+
+    expect(result.passed).toBe(true);
+    expect(result.attempts).toBe(1);
+    const payloads = sendMessage.mock.calls.map(
+      (call) => (call[1] as { timeoutMs?: number }).timeoutMs,
+    );
+    // Third probe: remaining = 1000 - 600 = 400, not a fresh 1000.
+    expect(payloads).toEqual([1000, 700, 400, undefined]);
+    vi.useRealTimers();
+  });
+
+  it('reports total durationMs when retries are exhausted', async () => {
+    const step = makeStep({ options: { retry: { count: 2, backoffMs: 1 } } });
+
+    vi.spyOn(browser.tabs, 'sendMessage')
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(false, 'Timeout'))
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(executedResponse(false, 'Timeout'));
+
+    const result = await executeStepWithRetry(TAB_ID, step);
+    expect(result.passed).toBe(false);
     expect(result.attempts).toBe(2);
+    // Includes the inter-attempt backoff — not the old hardcoded 0.
+    expect(result.durationMs).toBeGreaterThanOrEqual(1);
   });
 
   it('fails gracefully when no AI provider is configured', async () => {
