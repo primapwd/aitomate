@@ -7,6 +7,15 @@ import type {
   RecorderStepsResponse,
 } from '@/lib/recorder/messages';
 import { buildRunReport, type RunReport } from '@/lib/runner/report';
+import {
+  captureTabScreenshot,
+  clearCaptureBuffer,
+  filterRunCapture,
+  readCaptureBuffer,
+  recordCaptureEntry,
+  networkErrorText,
+  networkFailureText,
+} from '@/lib/runner/capture';
 import { captureNavigation } from '@/lib/recorder/capture';
 import { reduceSession, type RecorderSessionState } from '@/lib/recorder/session';
 import {
@@ -15,7 +24,7 @@ import {
   saveRecording,
   type TabRecording,
 } from '@/lib/recorder/store';
-import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerStepResultMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
+import type { RunnerCommand, RunnerContentEvent, RunnerRunReportMessage, RunnerStateMessage, RunnerStepResultMessage, RunnerSuiteStateMessage, StepResult } from '@/lib/runner/messages';
 import { findScenarioByName, listScenarios } from '@/lib/import-export';
 import { runSuite, type SuiteReport, type SuiteScenarioRef } from '@/lib/runner/suite';
 import { runSetup } from '@/lib/runner/chaining';
@@ -268,12 +277,26 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
   deleteControl(tabId);
 
   const finishedAt = Date.now();
+
+  // FR-5 report capture: pull the tab-scoped buffer (page errors from the
+  // content script, network errors from webRequest), window it to this run,
+  // then clear so the next run starts clean. Screenshot is best-effort and
+  // only meaningful on failure (buildRunReport drops it for passed runs).
+  const capture = await readCaptureBuffer(tabId);
+  const inWindow = filterRunCapture(capture, startedAt, finishedAt);
+  await clearCaptureBuffer(tabId);
+  const screenshot =
+    run.session.status === 'done' ? undefined : await captureTabScreenshot(tabId);
+
   const report = buildRunReport({
     scenarioName: scenario.meta.name,
     steps: scenario.steps,
     results: run.results,
     startedAt,
     finishedAt,
+    screenshotOnFailure: screenshot,
+    consoleErrors: inWindow.filter((e) => e.kind === 'page').map((e) => e.text),
+    networkErrors: inWindow.filter((e) => e.kind === 'network').map((e) => e.text),
   });
   void broadcastRunReport(tabId, report);
 
@@ -299,6 +322,7 @@ export default defineBackground(() => {
         | RecorderCommand
         | RecorderEvent
         | RunnerCommand
+        | RunnerContentEvent
         | VaultCommand,
       sender,
     ):
@@ -306,6 +330,13 @@ export default defineBackground(() => {
       | void => {
       // ── Recorder handlers (T1.x) ──
       switch (message.type) {
+        case 'aitomate:runner:capture-entry': {
+          // Content scripts can't write to storage.session; persist their
+          // page-error entries here, keyed by sender.tab.id.
+          const tabId = sender.tab?.id;
+          if (tabId === undefined) return;
+          return recordCaptureEntry(tabId, message.entry);
+        }
         case 'aitomate:recorder:step-captured': {
           const tabId = sender.tab?.id;
           if (tabId === undefined) return;
@@ -591,6 +622,38 @@ export default defineBackground(() => {
       }
     },
   );
+
+  // ── Run-report capture: network errors (FR-5) ──
+  // Passive observation (no blocking). Requires `webRequest` permission +
+  // `<all_urls>` host permissions (wxt.config.ts). Filtered to tab requests
+  // (extension/service-worker traffic has tabId -1); buffer is tab-scoped,
+  // bounded, and windowed to the run at report time.
+
+  const recordNetwork = (tabId: number, text: string): void => {
+    if (tabId < 0) return;
+    void recordCaptureEntry(tabId, { kind: 'network', text, timestamp: Date.now() });
+  };
+
+  if (browser.webRequest) {
+    browser.webRequest.onErrorOccurred.addListener(
+      (details) => {
+        if (details.tabId < 0) return;
+        recordNetwork(
+          details.tabId,
+          networkFailureText(details.error ?? 'request failed', details.url),
+        );
+      },
+      { urls: ['<all_urls>'] },
+    );
+
+    browser.webRequest.onCompleted.addListener(
+      (details) => {
+        if (details.tabId < 0 || details.statusCode < 400) return;
+        recordNetwork(details.tabId, networkErrorText(details.statusCode, details.url));
+      },
+      { urls: ['<all_urls>'] },
+    );
+  }
 
   // ── Top-frame navigation while recording (unchanged from T1.x) ──
 

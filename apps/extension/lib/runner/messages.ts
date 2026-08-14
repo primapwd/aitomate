@@ -1,4 +1,5 @@
 import type { Scenario, Selector, Step } from '@aitomate/schema';
+import type { CaptureEntry } from './capture';
 import type { RunnerSessionState } from './runner-session';
 import type { RunReport } from './report';
 import type { SuiteReport, SuiteScenarioRef } from './suite';
@@ -37,7 +38,15 @@ export type RunnerContentEvent =
   | { type: 'aitomate:runner:dom-stable' }
   | { type: 'aitomate:runner:element-located'; found: boolean; error?: string }
   | { type: 'aitomate:runner:element-picked'; selector: Selector }
-  | { type: 'aitomate:runner:pick-cancelled' };
+  | { type: 'aitomate:runner:pick-cancelled' }
+  /**
+   * Page error captured during a run (FR-5), forwarded by the content
+   * script's relay. Content scripts cannot write to `storage.session`
+   * ("Access to storage is not allowed from this context"), so the
+   * background — a trusted context — persists it keyed by
+   * `sender.tab.id`.
+   */
+  | { type: 'aitomate:runner:capture-entry'; entry: CaptureEntry };
 
 /**
  * Background → UI (popup/sidepanel), broadcast on every state change.

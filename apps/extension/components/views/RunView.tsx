@@ -812,6 +812,51 @@ export default function RunView({ onEdit }: RunViewProps) {
                 </div>
               ))}
             </div>
+
+            {/* Failure screenshot (FR-5) */}
+            {runReport.screenshotOnFailure && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+                  Screenshot on failure
+                </div>
+                <img
+                  src={runReport.screenshotOnFailure}
+                  alt="Page state at run failure"
+                  style={{ width: '100%', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}
+                />
+              </div>
+            )}
+
+            {/* Console / network errors captured during the run (FR-5) */}
+            {runReport.consoleErrors.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--status-error)', marginBottom: 4 }}>
+                  Console errors ({runReport.consoleErrors.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {runReport.consoleErrors.map((text, idx) => (
+                    <div key={idx} style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {runReport.networkErrors.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--status-error)', marginBottom: 4 }}>
+                  Network errors ({runReport.networkErrors.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {runReport.networkErrors.map((text, idx) => (
+                    <div key={idx} style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

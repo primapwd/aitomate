@@ -14,6 +14,7 @@ import {
 import type { RecorderEvent, RecorderStateMessage } from '@/lib/recorder/messages';
 import { initialSessionState, type RecorderSessionState } from '@/lib/recorder/session';
 import type { RunnerContentCommand, RunnerContentEvent } from '@/lib/runner/messages';
+import { parseCaptureMessage } from '@/lib/runner/capture';
 import {
   isTruthyValue,
   isVisible,
@@ -56,6 +57,36 @@ export default defineContentScript({
     function withFramePath<T extends { selector?: { framePath?: string[] } }>(step: T): T {
       if (!framePath?.length || !step.selector) return step;
       return { ...step, selector: { ...step.selector, framePath } };
+    }
+
+    // ── Run-report capture relay (FR-5) ──
+    // Top frame only: with `allFrames: true`, every frame would otherwise
+    // forward the same tab's errors and race writes; iframe page errors are
+    // a documented v1 limitation. Installed synchronously at boot — no
+    // bootstrap round trip — so no page error in the first moments of a
+    // page can be missed.
+    //
+    // Page errors arrive over postMessage from the MAIN-world capture
+    // script (entrypoints/capture.content.ts): an isolated-world `error`
+    // listener does NOT receive page-world uncaught exceptions.
+    //
+    // The relay forwards to the background rather than writing
+    // storage.session directly — content scripts cannot access it
+    // ("Access to storage is not allowed from this context"); the
+    // background keys the entry by `sender.tab.id`.
+    if (!framePath) {
+      window.addEventListener('message', (event) => {
+        const entry = parseCaptureMessage(
+          event.data,
+          event.origin,
+          window.location.origin,
+        );
+        if (!entry) return;
+        void browser.runtime.sendMessage({
+          type: 'aitomate:runner:capture-entry',
+          entry,
+        } as RunnerContentEvent);
+      });
     }
 
     // ── Recorder DOM listeners (unchanged) ──

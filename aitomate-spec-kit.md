@@ -1,11 +1,29 @@
 # Spec-Kit: Aitomate
 ### Browser Extension for Collaborative, AI-Assisted Test Automation
 
-Version: 0.3.3 (Draft)
-Date: 2026-07-16
+Version: 0.3.4 (Draft)
+Date: 2026-08-14
 Author: Prima Putra
 Target build method: Spec-Driven Development (SDD) with Claude Code / Codex / OpenCode
 
+> Changelog 0.3.4: FR-5 report capture implemented — `screenshotOnFailure`,
+> `consoleErrors`, `networkErrors` were rendered by the report model but
+> never populated (hollow pipeline). Now: page errors (uncaught exceptions,
+> unhandled rejections, resource load failures) via a MAIN-world content
+> script (`capture.content.ts`) forwarded over `postMessage` to the
+> isolated-world relay and persisted by the background (content scripts
+> cannot access `storage.session`); network errors via background
+> `webRequest` observation (`onErrorOccurred` + `onCompleted` ≥ 400;
+> requires `webRequest` permission + `<all_urls>` host permissions);
+> screenshot via `captureVisibleTab` at run end on failure (best-effort).
+> The postMessage relay validates origin + shape, so cross-origin frames
+> cannot forge report entries (same-origin page scripts can — a postMessage
+> token would be page-observable; the sound out-of-band secret is a
+> documented follow-up if reports become formal evidence).
+> Page `console.error()` *calls* are not captured in v1 — the
+> `consoleErrors` field carries the page errors that surface red in a
+> console.
+>
 > Changelog 0.2.0: framework-agnostic scope (no longer Laravel-only), UI switched
 > to React, plugin system downscoped to declarative JSON for v1, CI/Pest
 > integration moved to post-MVP backlog, MCP replaced by a purpose-built local
@@ -843,5 +861,5 @@ Notes:
 
 ---
 
-*End of Spec-Kit v0.2.0 — update this file as decisions are made; treat it as
+*End of Spec-Kit v0.3.4 — update this file as decisions are made; treat it as
 the source of truth for AI coding agents working on this project.*

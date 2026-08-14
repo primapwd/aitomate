@@ -367,6 +367,79 @@ correctly rejected. `STOP`/`RESUME` were changed to spread the prior state
 `generation` (and `originUrl`) survive those transitions — `RESUME`
 explicitly clears `pauseReason` to keep its existing contract.
 
+## Run-report capture (FR-5)
+
+Closed the hollow-pipeline gap from the T4.1 review: `screenshotOnFailure`,
+`consoleErrors`, and `networkErrors` were rendered by the report model and
+both exporters but nothing ever populated them — a failed run's report
+always showed empty arrays and no screenshot. Now real:
+
+- **Page errors** (`consoleErrors` field): a MAIN-world content script
+  (`entrypoints/capture.content.ts` — WXT registers `*.content.ts` scripts
+  as content scripts; `content-*.ts` is NOT a recognized pattern and builds
+  an unregistered chunk) listens for page-world `error` (capture-phase, so
+  resource load failures are seen too) and `unhandledrejection` and
+  forwards over `postMessage` to the isolated-world `content.ts`, which
+  relays to the background. Why MAIN world: an isolated-world `error`
+  listener does NOT receive page-world uncaught exceptions — verified
+  empirically on MV3 (page-world listener saw the throw; the isolated
+  buffer stayed empty). Manifest content scripts also bypass page CSP.
+  Top frame only (with `allFrames: true`, every frame would forward the
+  same tab's errors; iframe errors are a documented v1 limitation). Page
+  `console.error()` *calls* are NOT captured (v1) — the field carries what
+  surfaces red in a console: uncaught exceptions, unhandled rejections,
+  failed resource loads.
+  PostMessage forgery hardening: the relay validates origin + shape
+  (`parseCaptureMessage` in capture.ts) — a cross-origin frame (ad embed,
+  other-extension iframe) cannot forge entries into the report. Same-origin
+  page scripts (XSS, first-party bugs) still can: the MAIN world has NO
+  extension API access (verified empirically — `browser.runtime` is
+  undefined there, so the MAIN script cannot message the background
+  directly and the relay is necessary), and both the MAIN script and page
+  scripts run in the same page context, so a token carried over
+  `postMessage` is page-observable and forgeable — theater. The sound fix,
+  if reports ever become formal evidence, is a per-load secret delivered
+  out-of-band (`scripting.executeScript` args + `tabs.sendMessage`), not a
+  postMessage token; documented in `parseCaptureMessage`.
+- **Network errors**: background `webRequest` observation —
+  `onErrorOccurred` (failures) + `onCompleted` with status ≥ 400. Requires
+  the `webRequest` permission and `<all_urls>` host permissions
+  (wxt.config.ts) — a real manifest/trust cost, but FR-5's promise was the
+  bigger lie, so the spec promise won. Passive observation only, no
+  blocking.
+- **Plumbing**: the background persists both writers' entries into a
+  tab-scoped ring buffer in `storage.session` (`lib/runner/capture.ts`,
+  100-entry cap). Content scripts CANNOT access `storage.session` (MV3
+  rejects with "Access to storage is not allowed from this context" — only
+  extension pages and the service worker are trusted contexts), so the
+  page-error relay sends `aitomate:runner:capture-entry` via
+  `runtime.sendMessage` and the background keys it by `sender.tab.id` —
+  this also eliminated the earlier `get-tab-id` bootstrap round trip, which
+  had its own bug: it returned a raw number, and the Chrome/Firefox
+  `onMessage` contract only honors a Promise (or `true` + manual
+  `sendResponse`) — a raw return value is ignored and `sendMessage`
+  resolves `undefined`, silently killing the collectors (the switch's only
+  non-Promise case). Background reads the buffer at report time, windows it
+  to `[startedAt, finishedAt]`, clears it, and passes the split
+  page/network lists into `buildRunReport`.
+- **Screenshot**: `captureVisibleTab(tab.windowId)` at run end, only when
+  the run failed, best-effort (a permission miss must never fail the run).
+  Requires the run tab to be the active tab of its window (`activeTab`
+  grant) — real usage satisfies this (popup opened on the target tab, which
+  is exactly the tab the Run view runs in); automated e2e can't simulate
+  the toolbar-click grant, so the screenshot path is unit-tested and
+  manual-verified, not e2e-asserted.
+- **Verified end-to-end**: temp e2e specs ran (1) a scenario navigating to
+  a 404 — the failed run's `report.networkErrors` contained
+  `HTTP 404: http://localhost:8081/missing.html` (webRequest → buffer →
+  report); (2) a page that throws mid-run — `report.consoleErrors`
+  contained the thrown error, proving the MAIN-world → postMessage →
+  relay → background path. The e2e also surfaced the pre-existing cost of
+  a failing assert (10s poll × 3 retries) — not changed here. Flake note:
+  three unit tests originally asserted real elapsed time
+  (`durationMs >= 1/250`), which intermittently read 0 under worker load
+  (frozen `performance.now`) — now all three mock the clock deterministically.
+
 ## Smart-wait probe + honest step timing (runner reliability)
 
 Trigger: a manual MVP run of `examples/demo-ssr/test-ssr.aitomate.json`

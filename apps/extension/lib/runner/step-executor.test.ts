@@ -39,6 +39,14 @@ afterEach(() => {
 
 describe('executeStepWithRetry', () => {
   it('returns passed=true when the content script succeeds', async () => {
+    // Deterministic clock: first read = step start, later reads = +500ms.
+    // Real-time assertions here are fragile — performance.now() can read 0
+    // elapsed for two instantly-resolving mocks (or under a leaked fake
+    // clock), which would make the honest-timing contract look broken.
+    let reads = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() =>
+      ++reads === 1 ? 1000 : 1500,
+    );
     vi.spyOn(browser.tabs, 'sendMessage')
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(executedResponse(true));
@@ -47,7 +55,7 @@ describe('executeStepWithRetry', () => {
     expect(result.passed).toBe(true);
     expect(result.attempts).toBe(1);
     expect(result.stepId).toBe('step-1');
-    expect(result.durationMs).toBeGreaterThan(0);
+    expect(result.durationMs).toBe(500);
   });
 
   it('retries on failure and succeeds on the 2nd attempt', async () => {
@@ -125,14 +133,20 @@ describe('executeStepWithRetry', () => {
     );
 
     const step = makeStep({ options: { timeoutMs: 50 } });
+    // Deterministic clock (first read = step start, later reads = +300ms) —
+    // same fragility guard as the success-path timing test.
+    let reads = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() =>
+      ++reads === 1 ? 1000 : 1300,
+    );
     const result = await executeStepWithRetry(TAB_ID, step);
     expect(result.passed).toBe(false);
     // One smart-wait attempt, not the full action retry budget — re-looping
     // on a page that will never answer just burns backoff time.
     expect(result.attempts).toBe(1);
     expect(result.error).toContain('content script could not be reached');
-    // At least one probe sleep elapsed — the timing is honest now.
-    expect(result.durationMs).toBeGreaterThanOrEqual(250);
+    // The probe phase elapsed — the timing is honest now.
+    expect(result.durationMs).toBe(300);
   });
 
   it('aborts the smart-wait probe when the run is stopped', async () => {
@@ -159,7 +173,15 @@ describe('executeStepWithRetry', () => {
 
     const step = makeStep({ options: { timeoutMs: 1000 } });
     const pending = executeStepWithRetry(TAB_ID, step);
-    await vi.advanceTimersByTimeAsync(1200); // probe sleeps 300ms each iteration
+
+    // Drive the loop stepwise: flush startup microtasks at t=0, then fire
+    // the 300ms probe sleeps one at a time. Four probes fit inside the
+    // 1000ms horizon (t=0/300/600/900); the fifth iteration (t=1200)
+    // breaks on remaining <= 0.
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(300);
+    }
     const result = await pending;
 
     // Each probe carries the remaining budget (1000, 700, 400, 100) — a
@@ -184,7 +206,10 @@ describe('executeStepWithRetry', () => {
 
     const step = makeStep({ options: { timeoutMs: 1000 } });
     const pending = executeStepWithRetry(TAB_ID, step);
-    await vi.advanceTimersByTimeAsync(600); // two rejects (300ms apart), third send answers
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(300); // t=300: second probe (remaining 700) rejects
+    await vi.advanceTimersByTimeAsync(300); // t=600: third probe (remaining 400) answers
     const result = await pending;
 
     expect(result.passed).toBe(true);
@@ -206,11 +231,17 @@ describe('executeStepWithRetry', () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(executedResponse(false, 'Timeout'));
 
+    // Deterministic clock: step start at t=1000, finish at t=4000 — pins
+    // "total elapsed across attempts", immune to real-timer granularity.
+    let reads = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() =>
+      ++reads === 1 ? 1000 : 4000,
+    );
     const result = await executeStepWithRetry(TAB_ID, step);
     expect(result.passed).toBe(false);
     expect(result.attempts).toBe(2);
     // Includes the inter-attempt backoff — not the old hardcoded 0.
-    expect(result.durationMs).toBeGreaterThanOrEqual(1);
+    expect(result.durationMs).toBe(3000);
   });
 
   it('fails gracefully when no AI provider is configured', async () => {
