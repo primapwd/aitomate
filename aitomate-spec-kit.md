@@ -1,11 +1,23 @@
 # Spec-Kit: Aitomate
 ### Browser Extension for Collaborative, AI-Assisted Test Automation
 
-Version: 0.3.4 (Draft)
-Date: 2026-08-14
+Version: 0.3.5 (Draft)
+Date: 2026-08-15
 Author: Prima Putra
 Target build method: Spec-Driven Development (SDD) with Claude Code / Codex / OpenCode
 
+> Changelog 0.3.5: navigate-step placeholder guard generalized — it only ever
+> checked for a literal unresolved `{{BASE_URL}}`, so any other `{{...}}`
+> token (typo'd, or copy-pasted from another tool) silently "navigated"
+> nowhere real and reported `passed: true`, surfacing as an unrelated "no
+> content script" error on the *next* step (same failure class as the
+> Base URL bug in `docs/decisions.md`). Now any unresolved `{{...}}` fails
+> the step loud. Root cause: `resolveUrl` only ever substitutes
+> `{{BASE_URL}}` — FR-3's broader "environment variable placeholders" and
+> "Environment profiles" (name → variable map, Run view selector) were
+> never built, only this one hardcoded token. Added as T2.14 below since it
+> wasn't previously tracked as its own task.
+>
 > Changelog 0.3.4: FR-5 report capture implemented — `screenshotOnFailure`,
 > `consoleErrors`, `networkErrors` were rendered by the report model but
 > never populated (hollow pipeline). Now: page errors (uncaught exceptions,
@@ -739,6 +751,16 @@ Each task is scoped to be handed independently to an AI coding agent.
   `buildNavigateStep` builder into the content script's capture path so
   same-tab URL navigation during a recording produces a `navigate` step
   (per FR-1); currently the builder is unused dead code. Gap found 0.3.2.
+- [ ] T2.14: Environment profiles (FR-3) — generalize the single hardcoded
+  `{{BASE_URL}}` substitution into FR-3's full "environment variable
+  placeholders" scheme: named, non-secret environment profiles (name →
+  variable map) managed via a Run view environment selector, so a scenario
+  can reference more than one placeholder (e.g. `{{BASE_URL}}`,
+  `{{API_HOST}}`) instead of only a single free-text Base URL override.
+  `resolveUrl`/`executeNavigation` (`step-executor.ts`) and the Run view's
+  Base URL field only ever handled the one token; 0.3.5 made any *other*
+  unresolved `{{...}}` fail loud instead of silently mis-navigating, but
+  did not add the ability to actually resolve one. Gap found 0.3.5.
 
 **Phase 3: AI Resolver**
 - [x] T3.1: LLM Provider abstraction + OpenAI-compatible and Anthropic-compatible
@@ -861,5 +883,5 @@ Notes:
 
 ---
 
-*End of Spec-Kit v0.3.4 — update this file as decisions are made; treat it as
+*End of Spec-Kit v0.3.5 — update this file as decisions are made; treat it as
 the source of truth for AI coding agents working on this project.*

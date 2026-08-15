@@ -350,6 +350,21 @@ describe('executeStepWithRetry', () => {
     expect(result.error).toContain('Base URL');
     expect(update).not.toHaveBeenCalled();
   });
+
+  it('fails loud on any other unresolved {{...}} placeholder, not just {{BASE_URL}}', async () => {
+    // resolveUrl only ever substitutes {{BASE_URL}} — FR-3's other
+    // placeholder forms (e.g. {{ENV_VAR}}) aren't implemented, so any other
+    // token is unresolved by construction and must fail the same way
+    // {{BASE_URL}} does, not silently "navigate" to a non-absolute URL.
+    const navigateStep = makeStep({ action: 'navigate', url: '{{APP_URL}}/checkout' });
+    const update = vi.spyOn(browser.tabs, 'update').mockResolvedValue({} as any);
+
+    const result = await executeStepWithRetry(TAB_ID, navigateStep, undefined, undefined, 'http://localhost:8080');
+
+    expect(result.passed).toBe(false);
+    expect(result.error).toContain('{{APP_URL}}');
+    expect(update).not.toHaveBeenCalled();
+  });
 });
 
 describe('resolveUrl', () => {

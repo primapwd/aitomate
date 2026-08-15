@@ -15,7 +15,12 @@ import { slugify } from './slug';
  *   - suite as .zip (stored scenarios in Run view)
  *
  * Environment-variable placeholders ({{VAR_NAME}}) are preserved in the JSON
- * and resolved at runtime from local profiles (M2).
+ * as-is on export/import — only {{BASE_URL}} is ever resolved at runtime
+ * today (step-executor.ts's resolveUrl), via the Run view's single free-text
+ * Base URL field (ui-prefs.ts's runBaseUrl), not named profiles. FR-3's
+ * "environment profiles" (name -> variable map, Run view selector) is
+ * unbuilt — tracked as T2.14 (spec-kit), NOT Milestone 2 (M2 is
+ * database/bridge connector profiles, a different, unrelated "profile").
  */
 
 const SCENARIOS_KEY = 'aitomate:scenarios';

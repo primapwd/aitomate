@@ -4,7 +4,7 @@ Browser extension for collaborative, AI-assisted test automation. Works on any
 web app (server-rendered or SPA); Laravel apps are the reference targets, not a
 dependency.
 
-**Source of truth: `aitomate-spec-kit.md` (v0.3.3).** If anything here or in a
+**Source of truth: `aitomate-spec-kit.md` (v0.3.5).** If anything here or in a
 conversation contradicts the spec, the spec wins. Update the spec when a design
 decision changes; bump its version and changelog.
 
@@ -32,9 +32,16 @@ Full narrative history, rationale, and bug post-mortems per task:
   progress, PO/dev handoff) · Edit-existing-scenario · Scenario slugs
   (dedupe by slug, not name) · Build view "Pick element" (devtools-style
   point-and-click selector capture, PO/QA-friendly) · recorder stop-drops-
-  steps fix (generation-token guard, see Common Mistakes below).
-- Next: remaining spec §4 milestone items (Milestone 2: database/bridge,
-  Milestone 3: plugins & release — see spec §4).
+  steps fix (generation-token guard, see Common Mistakes below) · smart-wait
+  probe + honest step timing (runner reliability) · FR-5 run-report capture
+  (screenshot on failure, page/network errors — MAIN-world capture script +
+  postMessage relay, `webRequest` observation) · navigate-step placeholder
+  guard generalized (any unresolved `{{...}}`, not just `{{BASE_URL}}`).
+- Next: T2.14 Environment profiles (FR-3 gap: generalize `{{BASE_URL}}` into
+  named env profiles with a Run view selector — see `docs/decisions.md` §
+  Navigate-step placeholder guard generalized); remaining spec §4 milestone
+  items (Milestone 2: database/bridge, Milestone 3: plugins & release — see
+  spec §4).
 - Task list and milestone breakdown: spec §4.
 
 ## Commands

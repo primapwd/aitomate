@@ -525,3 +525,39 @@ against. `BuildView.tsx` writes the returned selector into the step via the
 existing `updateStep()` path (same one the Advanced selector editor uses),
 so Simple mode users get a working selector without ever seeing selector
 syntax.
+
+## Navigate-step placeholder guard generalized
+
+Found while reviewing FR-3 against the runner: `executeNavigation`'s guard
+against an unresolved placeholder (`step-executor.ts`) only ever checked
+`resolvedUrl.includes('{{BASE_URL}}')` — the literal token, not the general
+case. `resolveUrl` itself also only ever substitutes that one token
+(`url.replace(/\{\{BASE_URL\}\}/g, ...)`). Any *other* `{{...}}` placeholder
+in a navigate step's URL — a typo, or a token copy-pasted from another
+tool/spec example — was invisible to the guard: `tabs.update` doesn't reject
+a non-absolute `{{APP_URL}}/...`-shaped string, so the step silently
+reported `passed: true` and the *next* step failed with an unrelated-looking
+"no content script" error, hiding the real cause. Exact same failure class
+as the original Base URL bug (`docs/decisions.md` § Base URL, point 5) — the
+fix there closed the one token it was chasing, not the shape of the bug.
+
+Fixed by matching `/\{\{[^{}]+\}\}/` generically: any leftover `{{...}}`
+after `resolveUrl` fails the step loud, with the actual token named in the
+error, and a distinct message for the common `{{BASE_URL}}` case (points the
+user at the Run view's Base URL field) vs. any other token (states plainly
+that only `{{BASE_URL}}` is currently supported).
+
+This surfaced a bigger, pre-existing gap: FR-3 (spec-kit) describes
+"environment variable placeholders (e.g., `{{BASE_URL}}`)" resolved from
+named "Environment profiles" (a `name → variable map`, managed via a Run
+view environment selector) — a general mechanism, of which `{{BASE_URL}}`
+was always meant to be one example, not the only one.
+`packages/schema/src/scenario.ts`'s own doc comment already says
+`{{ENV_VAR}}`. None of that was ever built — only the single hardcoded
+`baseUrl` field/token exists in `RunView.tsx` and `step-executor.ts`, and it
+was never tracked as its own task (Milestone 1 was marked fully `[x]`
+without it). Added as **T2.14** (spec-kit 0.3.5, unchecked) rather than
+silently building the full environment-profiles feature under this fix —
+it's a real UI + schema-shape decision (multiple named profiles, a
+selector, profile storage) that deserves its own scoping pass, not a
+side effect of a one-line guard fix.

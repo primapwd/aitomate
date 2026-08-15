@@ -108,16 +108,26 @@ async function executeNavigation(
   debugLog('step-exec', `navigate tab=${tabId} url=${resolvedUrl}`);
   const startTime = performance.now();
 
-  // tabs.update doesn't reject an unresolved "{{BASE_URL}}/..." string — it's
-  // not a valid absolute URL, but Chrome accepts it and the navigation just
-  // goes nowhere real. Left unchecked, this step reports passed=true and the
+  // tabs.update doesn't reject an unresolved "{{...}}/..." string — it's not
+  // a valid absolute URL, but Chrome accepts it and the navigation just goes
+  // nowhere real. Left unchecked, this step reports passed=true and the
   // *next* step fails with an unrelated-looking "no content script" error,
-  // hiding the actual cause (Constitution: fail loud, fail clear).
-  if (resolvedUrl.includes('{{BASE_URL}}')) {
+  // hiding the actual cause (Constitution: fail loud, fail clear). Checked
+  // generically (any `{{...}}` left over), not just the literal
+  // `{{BASE_URL}}` — `resolveUrl` only ever substitutes that one token today
+  // (FR-3's other placeholder forms, e.g. `{{ENV_VAR}}`, aren't implemented
+  // yet — see spec-kit FR-3 Environment profiles), so any other `{{...}}` a
+  // user types is unresolved by construction and must fail the same way.
+  const unresolvedPlaceholder = resolvedUrl.match(/\{\{[^{}]+\}\}/);
+  if (unresolvedPlaceholder) {
+    const token = unresolvedPlaceholder[0];
+    const error = token === '{{BASE_URL}}'
+      ? 'Navigate step needs {{BASE_URL}} but no Base URL is set — enter one in the Run view.'
+      : `Navigate step has an unresolved placeholder ${token} — only {{BASE_URL}} is currently supported.`;
     return {
       stepId: step.id,
       passed: false,
-      error: 'Navigate step needs {{BASE_URL}} but no Base URL is set — enter one in the Run view.',
+      error,
       attempts: 1,
       durationMs: Math.round(performance.now() - startTime),
     };
