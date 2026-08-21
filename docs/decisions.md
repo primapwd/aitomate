@@ -561,3 +561,32 @@ silently building the full environment-profiles feature under this fix —
 it's a real UI + schema-shape decision (multiple named profiles, a
 selector, profile storage) that deserves its own scoping pass, not a
 side effect of a one-line guard fix.
+
+## FR-2c clarified: SQL query lives in the step resolver, not the Data Source
+
+Spec-vs-schema grilling round 6 found FR-2c's prose contradicting its own
+example, §3.3, the schema, and the parse fixtures: the prose said the query
+SELECT template was "stored as a 'Data Source' entry", but everything else
+put `query` + `params` inline in the step's resolver
+(`databaseResolverSchema`: `{type, dataSourceRef, query, params?}`) with
+`dataSources[]` being only `{name, type, connectorRef}` (name → connector
+mapping, no query, no credentials). FR-2c's own example
+(`{"type":"database","dataSourceRef":"app_users","query":...,"params":...}`)
+matches the schema, not its prose.
+
+Resolved in favor of the built reality (design B): edited FR-2c to say the
+query is written inline in the step resolver (stays visible in the scenario
+file for review) and a `dataSources[]` entry is only a name → connectorRef
+mapping. Decided now, not at M2, so the bridge execute-query protocol
+(T5.x) is designed against one consistent contract — a protocol designed
+from the old prose would have asked the bridge for the query via the Data
+Source entry that doesn't carry one.
+
+Also folded into spec 0.3.6: retro-changelog for three shipped-but-unlogged
+0.4.1 features — Build view "Pick element", live per-step results in the
+Run view, the UI redesign + version-in-header — so the spec's changelog
+reflects the product. And a one-line fix: `tabs.onRemoved` now calls
+`clearCaptureBuffer(tabId)` (capture buffer previously leaked in
+`storage.session` per closed tab); stale red run-report artifact at repo
+root deleted (failure explained: demo server down + fixed `durationMs: 0`
+bug).

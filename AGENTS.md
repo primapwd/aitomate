@@ -4,7 +4,7 @@ Browser extension for collaborative, AI-assisted test automation. Works on any
 web app (server-rendered or SPA); Laravel apps are the reference targets, not a
 dependency.
 
-**Source of truth: `aitomate-spec-kit.md` (v0.3.5).** If anything here or in a
+**Source of truth: `aitomate-spec-kit.md` (v0.3.6).** If anything here or in a
 conversation contradicts the spec, the spec wins. Update the spec when a design
 decision changes; bump its version and changelog.
 
@@ -43,6 +43,22 @@ Full narrative history, rationale, and bug post-mortems per task:
   items (Milestone 2: database/bridge, Milestone 3: plugins & release — see
   spec §4).
 - Task list and milestone breakdown: spec §4.
+
+### Open grilling items (agreed in review, not yet done)
+
+Found during the spec-vs-code grilling session; each is a real gap, not
+bookkeeping. Status as of spec-kit 0.3.5 / commit b734475.
+
+1. **§3.7 third e2e smoke case still absent.** `smoke.spec.ts`'s comment
+   still says the bundled-static-scenario-runs-green case "lands once the
+   runner + a demo target exist" — both exist. The Playwright harness must
+   self-serve `examples/demo-ssr` on 8081 (a real run already passes green,
+   verified via a temp repro spec, since deleted).
+2. **Plain-language error mapping (Constitution: fail loud, fail clear).**
+   Raw browser errors still reach PO-facing surfaces: the runner fail-fast
+   message embeds "Could not establish connection. Receiving end does not
+   exist." and the report UI shows "Network failure (net::ERR_...)".
+   Needs a small error classifier on the run-failure path.
 
 ## Commands
 

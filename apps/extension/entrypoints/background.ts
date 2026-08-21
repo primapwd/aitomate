@@ -690,5 +690,6 @@ export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId) => {
     void clearRecording(tabId);
     void clearRun(tabId);
+    void clearCaptureBuffer(tabId);
   });
 });

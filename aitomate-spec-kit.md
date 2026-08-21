@@ -1,11 +1,24 @@
 # Spec-Kit: Aitomate
 ### Browser Extension for Collaborative, AI-Assisted Test Automation
 
-Version: 0.3.5 (Draft)
-Date: 2026-08-15
+Version: 0.3.6 (Draft)
+Date: 2026-08-21
 Author: Prima Putra
 Target build method: Spec-Driven Development (SDD) with Claude Code / Codex / OpenCode
 
+> Changelog 0.3.6: (1) FR-2c clarified — the SQL query template lives inline
+> in the step's resolver, and a `dataSources[]` entry is only a name →
+> connectorRef mapping (no query, no credentials). Prose previously said the
+> query was "stored as a Data Source entry", contradicting §3.3, the schema
+> (`databaseResolverSchema`), and the parse fixtures; resolved in favor of
+> the built reality before M2 bridge (T5.x) designs the execute-query
+> protocol. (2) Retro-documented three shipped-but-unlogged features from
+> extension v0.4.1: Build view "Pick element" (devtools-style point-and-click
+> selector capture, PO/QA-friendly), live per-step results in the Run view,
+> and the 0.4.1 UI redesign (icon set, shared styles, version in header).
+> They shipped in `c8c77b1`/`15638f8` but never appeared in this spec's
+> changelog or task list; recorded now so the changelog reflects the product.
+>
 > Changelog 0.3.5: navigate-step placeholder guard generalized — it only ever
 > checked for a literal unresolved `{{BASE_URL}}`, so any other `{{...}}`
 > token (typo'd, or copy-pasted from another tool) silently "navigated"
@@ -226,8 +239,12 @@ b. **Dynamic**
      "constraints": {"format": "email"}}`
 
 c. **Database**
-   - Developer defines a query reference (SQL SELECT template with named params,
-     stored as a "Data Source" entry, not raw credentials in the scenario file).
+   - Developer defines a query reference: a SQL SELECT template with named
+     params, written inline in the step's resolver so it stays visible in the
+     scenario file for review. The `dataSources[].name` entry it points at
+     (`dataSourceRef`) is only a name → connector-profile mapping
+     (`{name, type, connectorRef}`) — it holds no query and no credentials;
+     secrets live in the local encrypted vault (FR-3).
    - At run time, engine calls the local Aitomate Bridge (see Plan 3.4) that executes
      the query against the target DB and returns a row/value.
    - Example: `{"type": "database", "dataSourceRef": "app_users", "query":
@@ -883,5 +900,5 @@ Notes:
 
 ---
 
-*End of Spec-Kit v0.3.5 — update this file as decisions are made; treat it as
+*End of Spec-Kit v0.3.6 — update this file as decisions are made; treat it as
 the source of truth for AI coding agents working on this project.*
