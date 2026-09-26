@@ -117,9 +117,9 @@ describe('network texts', () => {
     );
   });
 
-  it('formats a network failure', () => {
+  it('formats a network failure in plain language', () => {
     expect(networkFailureText('net::ERR_CONNECTION_REFUSED', 'https://x.test')).toBe(
-      'Network failure (net::ERR_CONNECTION_REFUSED): https://x.test',
+      'Network failure (the server refused the connection — is it running?): https://x.test',
     );
   });
 });

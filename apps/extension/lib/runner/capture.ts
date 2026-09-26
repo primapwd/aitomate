@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { errorEventText, rejectionText } from './capture-text';
+import { plainNetworkError } from './plain-error';
 
 export { errorEventText, rejectionText };
 
@@ -71,7 +72,7 @@ export function networkErrorText(status: number, url: string): string {
 
 /** Network failure text for a request that never completed. */
 export function networkFailureText(error: string, url: string): string {
-  return `Network failure (${error}): ${url}`;
+  return `Network failure (${plainNetworkError(error)}): ${url}`;
 }
 
 /**

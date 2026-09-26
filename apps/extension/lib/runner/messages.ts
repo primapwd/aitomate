@@ -17,8 +17,23 @@ import type { SuiteReport, SuiteScenarioRef } from './suite';
 
 /** Popup/side-panel (Run view) → background. Targets a tab explicitly. */
 export type RunnerCommand =
-  | { type: 'aitomate:runner:play'; tabId: number; scenario: Scenario; baseUrl?: string }
-  | { type: 'aitomate:runner:play-suite'; tabId: number; scenarioRefs: SuiteScenarioRef[]; baseUrl?: string }
+  | {
+      type: 'aitomate:runner:play';
+      tabId: number;
+      scenario: Scenario;
+      baseUrl?: string;
+      /** Environment profile variables (T2.14) — substituted into {{VAR}}
+       * placeholders in navigate URLs at run time. Plain data, no secrets. */
+      envVars?: Record<string, string>;
+    }
+  | {
+      type: 'aitomate:runner:play-suite';
+      tabId: number;
+      scenarioRefs: SuiteScenarioRef[];
+      baseUrl?: string;
+      /** Same environment applied to every scenario in the suite. */
+      envVars?: Record<string, string>;
+    }
   | { type: 'aitomate:runner:pause'; tabId: number }
   | { type: 'aitomate:runner:resume'; tabId: number }
   | { type: 'aitomate:runner:stop'; tabId: number }

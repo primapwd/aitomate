@@ -8,6 +8,15 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   reporter: 'list',
+  webServer: {
+    // Spec §3.7: the smoke runs a bundled static-only scenario against
+    // examples/demo-ssr, served verbatim (no URL rewriting) — see
+    // e2e/serve-demo.mjs.
+    command: 'node e2e/serve-demo.mjs',
+    url: 'http://localhost:8081/index.html',
+    reuseExistingServer: !process.env.CI,
+    timeout: 15_000,
+  },
   use: {
     trace: 'retain-on-failure',
   },

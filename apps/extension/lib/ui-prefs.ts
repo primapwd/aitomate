@@ -13,11 +13,16 @@ export interface UiPrefs {
    * plain per-user text input, not a secret. Persisted so a PO doesn't have
    * to retype it every time the popup/side panel closes and reopens. */
   runBaseUrl: string;
+  /** Selected environment profile name (T2.14) — '' means none. The name is
+   * looked up in `aitomate:env-profiles` at run time; a deleted profile just
+   * means the run proceeds without profile variables. */
+  runEnvProfile: string;
 }
 
 const DEFAULT_PREFS: UiPrefs = {
   buildMode: 'simple',
   runBaseUrl: '',
+  runEnvProfile: '',
 };
 
 export async function getUiPrefs(): Promise<UiPrefs> {

@@ -172,7 +172,11 @@ interface RunOutcome {
  * scenario instead of re-implementing it — the single-scenario `play`
  * handler below just fires it and ignores the return value.
  */
-async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcome> {
+async function runSequence(
+  tabId: number,
+  scenario: Scenario,
+  envVars?: Record<string, string>,
+): Promise<RunOutcome> {
   // Fresh control per run — a stale one (e.g. stopped=true left by a STOP on
   // an errored run) must not kill this run on its first iteration.
   const ctrl: RunControl = { stopped: false, pausePromise: null, resume: null };
@@ -202,6 +206,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
       { stopped: () => ctrl.stopped },
       llmGenerate,
       scenario.meta.baseUrl,
+      envVars,
     );
     if (!setupOutcome.ok) {
       // Setup failed — report and stop the main run
@@ -242,6 +247,7 @@ async function runSequence(tabId: number, scenario: Scenario): Promise<RunOutcom
       { stopped: () => ctrl.stopped },
       llmGenerate,
       scenario.meta.baseUrl,
+      envVars,
     );
 
     run.results.push(result);
@@ -431,7 +437,7 @@ export default defineBackground(() => {
               ? { ...message.scenario, meta: { ...message.scenario.meta, baseUrl: message.baseUrl } }
               : message.scenario;
             // Fire-and-forget: the runner loop runs asynchronously.
-            void runSequence(message.tabId, mergedScenario);
+            void runSequence(message.tabId, mergedScenario, message.envVars);
           })();
 
         case 'aitomate:runner:pause':
@@ -535,7 +541,7 @@ export default defineBackground(() => {
                 const scenarioToRun = message.baseUrl
                   ? { ...entry.scenario, meta: { ...entry.scenario.meta, baseUrl: message.baseUrl } }
                   : entry.scenario;
-                return runSequence(tabId, scenarioToRun);
+                return runSequence(tabId, scenarioToRun, message.envVars);
               },
               { stopped: () => sctrl.stopped },
               {},

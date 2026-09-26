@@ -9,7 +9,13 @@ beforeEach(() => {
 describe('getUiPrefs', () => {
   it('returns defaults when nothing is stored', async () => {
     const prefs = await getUiPrefs();
-    expect(prefs).toEqual({ buildMode: 'simple', runBaseUrl: '' });
+    expect(prefs).toEqual({ buildMode: 'simple', runBaseUrl: '', runEnvProfile: '' });
+  });
+
+  it('persists the selected environment profile', async () => {
+    await setUiPref('runEnvProfile', 'staging');
+    const prefs = await getUiPrefs();
+    expect(prefs.runEnvProfile).toBe('staging');
   });
 });
 

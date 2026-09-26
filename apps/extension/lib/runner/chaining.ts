@@ -59,6 +59,7 @@ export async function runSetup(
   signal: RunSignal,
   llmGenerate?: LlmGenerateFn,
   baseUrl?: string,
+  envVars?: Record<string, string>,
 ): Promise<SetupOutcome> {
   const stored = await findScenario(setup.scenarioRef);
   if (!stored) {
@@ -88,7 +89,7 @@ export async function runSetup(
     if (signal.stopped()) break;
 
     const step: Step = setupSc.steps[i];
-    const result = await executeStepWithRetry(tabId, step, signal, llmGenerate, baseUrl);
+    const result = await executeStepWithRetry(tabId, step, signal, llmGenerate, baseUrl, envVars);
 
     if (!result.passed) {
       return {

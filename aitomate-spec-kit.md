@@ -1,11 +1,28 @@
 # Spec-Kit: Aitomate
 ### Browser Extension for Collaborative, AI-Assisted Test Automation
 
-Version: 0.3.6 (Draft)
-Date: 2026-08-21
+Version: 0.3.7 (Draft)
+Date: 2026-08-25
 Author: Prima Putra
 Target build method: Spec-Driven Development (SDD) with Claude Code / Codex / OpenCode
 
+> Changelog 0.3.7: (1) completeness audit against §4 found FR-5's "unfocused
+> run" mode (execute a scenario in a non-active tab so the user can keep
+> working in another window) was never built and never tracked — the Run
+> view unconditionally targets `tabs.query({ active: true })`, so every
+> run drives the focused tab. Tracked as T4.6 below (unchecked),
+> mirroring the T2.14 find in 0.3.5. (2) T2.14 done — environment
+> profiles implemented: named, non-secret profiles persisted in
+> `storage.local` (`aitomate:env-profiles`), managed inline through a new
+> Run view Environment selector + profile manager; `resolveUrl`
+> substitutes any `{{VAR}}` from the selected profile into navigate URLs,
+> including composed bases (`https://{{API_HOST}}`); an explicit Base URL
+> override still wins over a profile's own BASE_URL entry; the
+> unresolved-placeholder guard now points missing variables at the
+> profile manager instead of claiming only {{BASE_URL}} is supported.
+> Zero-setup baseline unchanged — running a static-only scenario never
+> requires a profile.
+>
 > Changelog 0.3.6: (1) FR-2c clarified — the SQL query template lives inline
 > in the step's resolver, and a `dataSources[]` entry is only a name →
 > connectorRef mapping (no query, no credentials). Prose previously said the
@@ -768,7 +785,7 @@ Each task is scoped to be handed independently to an AI coding agent.
   `buildNavigateStep` builder into the content script's capture path so
   same-tab URL navigation during a recording produces a `navigate` step
   (per FR-1); currently the builder is unused dead code. Gap found 0.3.2.
-- [ ] T2.14: Environment profiles (FR-3) — generalize the single hardcoded
+- [x] T2.14: Environment profiles (FR-3) — generalize the single hardcoded
   `{{BASE_URL}}` substitution into FR-3's full "environment variable
   placeholders" scheme: named, non-secret environment profiles (name →
   variable map) managed via a Run view environment selector, so a scenario
@@ -778,6 +795,8 @@ Each task is scoped to be handed independently to an AI coding agent.
   Base URL field only ever handled the one token; 0.3.5 made any *other*
   unresolved `{{...}}` fail loud instead of silently mis-navigating, but
   did not add the ability to actually resolve one. Gap found 0.3.5.
+  Done 0.3.7 — decisions recorded in the changelog above and
+  `docs/decisions.md`.
 
 **Phase 3: AI Resolver**
 - [x] T3.1: LLM Provider abstraction + OpenAI-compatible and Anthropic-compatible
@@ -794,6 +813,17 @@ Each task is scoped to be handed independently to an AI coding agent.
 - [x] T4.3: Export report as JSON/HTML.
 - [x] T4.4: First-run onboarding wizard (zero-setup static path).
 - [x] T4.5: Firefox/Edge build verification + polyfill audit.
+- [ ] T4.6: Unfocused run (FR-5) — execute a scenario in a *non-active*
+  tab so the user can keep working elsewhere while the run proceeds
+  (best-effort background execution per FR-5, not true headless — MV3
+  needs a live tab for content scripts). Today the Run view targets
+  `tabs.query({ active: true, currentWindow: true })` unconditionally, so
+  a run always drives the focused tab and steals focus through every
+  navigate step. Design questions: tab acquisition (reuse an existing
+  non-active tab vs open a pinned/background tab), focus-stealing during
+  navigation (`tabs.update` may activate the tab), and how the Run view
+  reports progress for a tab it isn't watching. Gap found 0.3.7 — the mode
+  was claimed in FR-5 since 0.2.0 but never built nor tracked.
 
 ### Milestone 2 — Database & Team Config
 - [ ] T5.1: `packages/bridge` → `aitomate-bridge` CLI: connector profiles,
@@ -900,5 +930,5 @@ Notes:
 
 ---
 
-*End of Spec-Kit v0.3.6 — update this file as decisions are made; treat it as
+*End of Spec-Kit v0.3.7 — update this file as decisions are made; treat it as
 the source of truth for AI coding agents working on this project.*

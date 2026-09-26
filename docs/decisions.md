@@ -588,5 +588,95 @@ Run view, the UI redesign + version-in-header — so the spec's changelog
 reflects the product. And a one-line fix: `tabs.onRemoved` now calls
 `clearCaptureBuffer(tabId)` (capture buffer previously leaked in
 `storage.session` per closed tab); stale red run-report artifact at repo
-root deleted (failure explained: demo server down + fixed `durationMs: 0`
+artifact deleted (failure explained: demo server down + fixed `durationMs: 0`
 bug).
+
+## Plain-language error mapping (run-failure path)
+
+Grilling item: raw browser errors still reached PO-facing surfaces — the
+runner fail-fast message embedded
+`(Error: Could not establish connection. Receiving end does not exist.)` and
+the report's networkErrors showed `Network failure (net::ERR_CONNECTION_REFUSED):
+url` — both violations of the Constitution (fail loud, fail clear).
+
+Fixed with a pure classifier, `lib/runner/plain-error.ts` (no `browser.*`
+import, unit-tested): `plainBrowserError` maps Chrome runtime messaging
+failures ("Could not establish connection" / "Receiving end does not exist")
+to "The page could not be reached — it may have navigated away, shown an
+error page, or the extension was reloaded."; `plainNetworkError` maps known
+`net::ERR_*` codes (connection refused / name not resolved / timed out /
+reset / offline / certificate / aborted) to human text. Unknown input passes
+through unchanged — losing the original would hide actionable detail, and
+this project's own messages are already plain.
+
+Applied at the error *creation* sites, not the render layer, so every
+consumer (live Run view, report JSON/HTML export) gets plain text:
+`ContentScriptUnreachableError` no longer embeds the raw cause (kept on
+`err.cause` and debugLogged at the throw site), the execute / stability /
+navigation error paths in `step-executor.ts` route through
+`plainBrowserError`, and `networkFailureText` (`capture.ts`) routes through
+`plainNetworkError`. Deliberately NOT mapped: `consoleErrors` (page-side
+uncaught exceptions — the page's own voice, informative as-is) and
+LLM-resolver errors (a separate AI-surface).
+
+## §3.7 third smoke case: bundled scenario runs green
+
+The last open grilling item: spec §3.7 and AGENTS.md claimed a third E2E
+smoke case — "a bundled static-only scenario running green against a local
+demo page" — that never existed; `smoke.spec.ts`'s comment deferred it
+"until the runner + a demo target exist", and both existed since round 1 of
+the grilling session. The runner had zero automated end-to-end coverage:
+the six+ runner bugs fixed across the grilling rounds (smart-wait probe,
+honest `durationMs`, placeholder guard, error mapping, capture) all slipped
+past the two-case smoke.
+
+Implemented with the harness self-serving the demo: `e2e/serve-demo.mjs` — a
+~40-line Node static server (no new deps, no python-in-CI requirement)
+serving `examples/demo-ssr` verbatim, deliberately without URL rewriting
+(the scenario asserts `urlMatches` on `**/success.html*`, and rewriting
+servers like `npx serve` destroy the `.html` suffix) — wired via Playwright
+`webServer` (reuseExistingServer: !CI). The new smoke case seeds the
+bundled `test-ssr.aitomate.json` into `storage.local` ("bundled" per §3.7;
+the file-picker import path is unit-covered by import-export tests),
+activates the demo tab (the runner targets `tabs.query({active:true})` —
+asserted as a precondition so a wrong active tab fails fast, not as a
+mystery timeout), clicks the scenario's Run button, and waits for the
+`PASSED ✓` report badge (90s timeout; run ~20-25s). Demo-ssr is a dev-only
+fixture per the author — never used in prod, which is exactly the smoke's
+purpose.
+
+## Environment profiles implemented (T2.14)
+
+The last unchecked MVP task. FR-3 always promised "environment variable
+placeholders" resolved from named, non-secret environment profiles; only the
+single hardcoded `{{BASE_URL}}` token was ever built (see § Navigate-step
+placeholder guard generalized for how that gap surfaced). Implemented as:
+
+- **Storage**: `lib/env-profiles.ts` — profiles live in `storage.local`
+  under `aitomate:env-profiles` (`{ name, vars: Record<string, string> }`),
+  NOT in the encrypted vault (profiles are plain data by definition, FR-3)
+  and NOT in the scenario file (they are per-machine config, like ui-prefs).
+- **Resolution**: `resolveUrl` became map-based — it substitutes any
+  `{{VAR}}` whose name exists in the effective variable map and leaves
+  unknown tokens intact so the navigation guard still fails loud on them.
+  The map is composed in `executeNavigation`: profile variables first, then
+  the explicit Base URL override wins over a profile's own BASE_URL entry,
+  and a base value containing placeholders itself (composed bases like
+  `https://{{API_HOST}}`) resolves against the map before being published
+  as BASE_URL. Trailing-slash stripping on the base is preserved from the
+  old implementation. Substitution scope stays navigate-step URLs only —
+  extending to static values/assertion patterns would be additive.
+- **UI**: a Run view Environment selector (persisted via ui-prefs'
+  `runEnvProfile`) plus an inline manager (add/rename/use/delete profiles,
+  NAME=value rows). Zero-setup baseline untouched: "(none)" remains the
+  default and static-only scenarios never need a profile.
+- **Guard message**: the non-BASE_URL failure now says to add the variable
+  to your environment profile instead of claiming only {{BASE_URL}} is
+  supported — which had just become false.
+- **Threading discipline**: `envVars` rides the existing parameter chain
+  (`RunnerCommand` → `runSequence` → `executeStepWithRetry` →
+  `executeNavigation` → `resolveUrl`, plus `runSetup`), touching every
+  callsite — the exact bug class flagged twice in Common Mistakes above;
+  all three executor callsites (main loop, setup loop) were updated, the
+  session-marker check deliberately not (assertions carry no URLs).
+  Suites apply one environment to every scenario in the run.

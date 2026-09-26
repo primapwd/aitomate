@@ -6,6 +6,7 @@ import type {
   StepResult,
 } from './messages';
 import { resolveStepValues, type LlmGenerateFn } from './value-resolver';
+import { plainBrowserError } from './plain-error';
 import { debugLog } from '@/lib/debug';
 
 /**
@@ -55,12 +56,15 @@ class RunAbortedError extends Error {
  */
 class ContentScriptUnreachableError extends Error {
   constructor(cause: unknown) {
+    // No raw `cause` in the message: it's a Chrome runtime string ("Could
+    // not establish connection. Receiving end does not exist.") that would
+    // leak to PO/QA (Constitution: fail loud, fail clear). The cause stays
+    // on the error object and is debugLogged at the throw site.
     super(
-      `The page's content script could not be reached${
-        cause !== undefined ? ` (${String(cause)})` : ''
-      }`,
+      "The page's content script could not be reached. It may have navigated away, shown an error page, or the extension was reloaded.",
     );
     this.name = 'ContentScriptUnreachableError';
+    this.cause = cause;
   }
 }
 
@@ -71,15 +75,21 @@ class ContentScriptUnreachableError extends Error {
  * destroy the content-script instance). All other step types are forwarded to
  * the content script for DOM interaction.
  */
-/** Replace {{BASE_URL}} in a URL string with the given base. */
-export function resolveUrl(url: string, baseUrl?: string): string {
-  if (!baseUrl) return url;
-  const trimmed = baseUrl.replace(/\/+$/, '');
-  // Replacer must be a function, not a string — `String.prototype.replace`
-  // treats `$&`/`$$`/`` $` ``/`$'` specially in a string replacement, so a
-  // base URL containing a literal `$` (e.g. in basic-auth credentials or a
-  // query param) would otherwise corrupt the resolved URL.
-  return url.replace(/\{\{BASE_URL\}\}/g, () => trimmed);
+/**
+ * Substitute `{{VAR}}` placeholders from the given variable map (T2.14).
+ * `BASE_URL` is just one entry in the map — the caller composes it from the
+ * Run view's Base URL override or the scenario meta. Tokens with no entry in
+ * the map are left intact; the navigation guard below fails loud on them.
+ * The replacer must be a function, not a string — `String.prototype.replace`
+ * treats `$&`/`$$`/`` $` ``/`$'` specially in a string replacement, so a
+ * value containing a literal `$` (basic-auth credentials, query params)
+ * would otherwise corrupt the resolved URL.
+ */
+export function resolveUrl(url: string, vars?: Record<string, string>): string {
+  if (!vars) return url;
+  return url.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, (token, name: string) =>
+    vars[name] ?? token,
+  );
 }
 
 export async function executeStepWithRetry(
@@ -88,12 +98,13 @@ export async function executeStepWithRetry(
   signal?: { stopped: () => boolean },
   llmGenerate?: LlmGenerateFn,
   baseUrl?: string,
+  envVars?: Record<string, string>,
 ): Promise<StepResult> {
   const maxRetries = step.options?.retry?.count ?? DEFAULT_RETRY_COUNT;
   const baseBackoff = step.options?.retry?.backoffMs ?? DEFAULT_BACKOFF_MS;
 
   if (step.action === 'navigate') {
-    return executeNavigation(tabId, step, baseUrl);
+    return executeNavigation(tabId, step, baseUrl, envVars);
   }
 
   return executeDomStep(tabId, step, maxRetries, baseBackoff, signal, llmGenerate);
@@ -103,8 +114,19 @@ async function executeNavigation(
   tabId: number,
   step: Step & { action: 'navigate' },
   baseUrl?: string,
+  envVars?: Record<string, string>,
 ): Promise<StepResult> {
-  const resolvedUrl = resolveUrl(step.url, baseUrl);
+  // Effective variable map: profile variables first, then the explicit
+  // Base URL override (Run view field, or the scenario meta merged by the
+  // background) wins over a profile's own BASE_URL entry. A base value may
+  // itself contain placeholders (composed bases like `https://{{API_HOST}}`)
+  // — resolve it against the map before publishing it as BASE_URL.
+  const vars: Record<string, string> = { ...(envVars ?? {}) };
+  // Strip trailing slashes from the base — joining "{{BASE_URL}}/path" with
+  // a base ending in "/" would double the slash (pre-T2.14 behavior).
+  const effectiveBase = baseUrl ? resolveUrl(baseUrl, vars).replace(/\/+$/, '') : undefined;
+  if (effectiveBase) vars.BASE_URL = effectiveBase;
+  const resolvedUrl = resolveUrl(step.url, vars);
   debugLog('step-exec', `navigate tab=${tabId} url=${resolvedUrl}`);
   const startTime = performance.now();
 
@@ -113,17 +135,16 @@ async function executeNavigation(
   // nowhere real. Left unchecked, this step reports passed=true and the
   // *next* step fails with an unrelated-looking "no content script" error,
   // hiding the actual cause (Constitution: fail loud, fail clear). Checked
-  // generically (any `{{...}}` left over), not just the literal
-  // `{{BASE_URL}}` — `resolveUrl` only ever substitutes that one token today
-  // (FR-3's other placeholder forms, e.g. `{{ENV_VAR}}`, aren't implemented
-  // yet — see spec-kit FR-3 Environment profiles), so any other `{{...}}` a
-  // user types is unresolved by construction and must fail the same way.
+  // generically (any `{{...}}` left over): a token the selected environment
+  // profile doesn't define (or a typo'd one) fails loud instead of silently
+  // mis-navigating.
   const unresolvedPlaceholder = resolvedUrl.match(/\{\{[^{}]+\}\}/);
   if (unresolvedPlaceholder) {
     const token = unresolvedPlaceholder[0];
+    const varName = token.slice(2, -2);
     const error = token === '{{BASE_URL}}'
       ? 'Navigate step needs {{BASE_URL}} but no Base URL is set — enter one in the Run view.'
-      : `Navigate step has an unresolved placeholder ${token} — only {{BASE_URL}} is currently supported.`;
+      : `Navigate step has an unresolved placeholder ${token} — add "${varName}" to your environment profile in the Run view, or fix the typo.`;
     return {
       stepId: step.id,
       passed: false,
@@ -149,7 +170,7 @@ async function executeNavigation(
     return {
       stepId: step.id,
       passed: false,
-      error: `Navigation failed: ${String(err)}`,
+      error: `Navigation failed: ${plainBrowserError(String(err))}`,
       attempts: 1,
       durationMs: Math.round(performance.now() - startTime),
     };
@@ -227,7 +248,7 @@ async function executeDomStep(
           durationMs: elapsed(),
         };
       }
-      lastError = `DOM stability check failed: ${String(err)}`;
+      lastError = `DOM stability check failed: ${plainBrowserError(String(err))}`;
       if (attempt < maxRetries) {
         await backoff(baseBackoff, attempt);
       }
@@ -253,7 +274,7 @@ async function executeDomStep(
         ? response.error ?? 'Step returned false without error'
         : 'Unexpected response from content script';
     } catch (err) {
-      lastError = String(err);
+      lastError = plainBrowserError(String(err));
     }
 
     if (attempt < maxRetries) {
@@ -310,6 +331,7 @@ async function waitForDomStability(
       await sleep(CONTENT_SCRIPT_PROBE_MS);
     }
   }
+  debugLog('step-exec', `content script unreachable: ${String(lastErr)}`);
   throw new ContentScriptUnreachableError(lastErr);
 }
 

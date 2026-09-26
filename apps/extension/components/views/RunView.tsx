@@ -17,6 +17,12 @@ import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerS
 import type { StepResult } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
 import { getUiPrefs, setUiPref } from '@/lib/ui-prefs';
+import {
+  deleteEnvProfile,
+  listEnvProfiles,
+  saveEnvProfile,
+  type EnvProfile,
+} from '@/lib/env-profiles';
 import { describeStep } from '@/components/views/build/StepCard';
 import {
   IconAlert,
@@ -42,13 +48,16 @@ export interface RunViewProps {
 export default function RunView({ onEdit }: RunViewProps) {
   const [scenarios, setScenarios] = useState<StoredScenario[]>([]);
   const [importError, setImportError] = useState('');
-  const [runningId, setRunningId] = useState<string | null>(null);
+  const [baseUrl, setBaseUrl] = useState('');
+  const [profiles, setProfiles] = useState<EnvProfile[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState('');
+  const [showProfileManager, setShowProfileManager] = useState(false);
   const [runTabId, setRunTabId] = useState<number | null>(null);
   const [suiteRunning, setSuiteRunning] = useState(false);
   const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
   const [runReport, setRunReport] = useState<RunReport | null>(null);
   const [reportAdvanced, setReportAdvanced] = useState(false);
-  const [baseUrl, setBaseUrl] = useState('');
+  const [runningId, setRunningId] = useState<string | null>(null);
   const [stepProgress, setStepProgress] = useState<{ index: number; total: number } | null>(null);
   const [viewStepsId, setViewStepsId] = useState<string | null>(null);
   const [stepResults, setStepResults] = useState<Record<string, StepResult>>({});
@@ -64,13 +73,61 @@ export default function RunView({ onEdit }: RunViewProps) {
   }, [refresh]);
 
   useEffect(() => {
-    void getUiPrefs().then((prefs) => setBaseUrl(prefs.runBaseUrl));
+    void getUiPrefs().then((prefs) => {
+      setBaseUrl(prefs.runBaseUrl);
+      setSelectedProfile(prefs.runEnvProfile);
+    });
+    void listEnvProfiles().then(setProfiles);
   }, []);
 
   const handleBaseUrlChange = useCallback((value: string) => {
     setBaseUrl(value);
     void setUiPref('runBaseUrl', value);
   }, []);
+
+  const handleSelectProfile = useCallback((name: string) => {
+    setSelectedProfile(name);
+    void setUiPref('runEnvProfile', name);
+  }, []);
+
+  // Rename-safe upsert: saving under a new name removes the old entry and
+  // keeps the selection pointed at the renamed profile. Returns false when
+  // rejected (duplicate target name) so the editor keeps its saved name.
+  const commitProfile = useCallback(
+    async (next: EnvProfile, previousName: string): Promise<boolean> => {
+      if (next.name !== previousName && profiles.some((p) => p.name === next.name)) {
+        setImportError(`An environment named "${next.name}" already exists.`);
+        return false;
+      }
+      await saveEnvProfile(next);
+      if (next.name !== previousName) {
+        await deleteEnvProfile(previousName);
+        if (selectedProfile === previousName) handleSelectProfile(next.name);
+      }
+      setProfiles(await listEnvProfiles());
+      setImportError('');
+      return true;
+    },
+    [profiles, selectedProfile, handleSelectProfile],
+  );
+
+  const removeProfile = useCallback(
+    async (name: string) => {
+      await deleteEnvProfile(name);
+      setProfiles(await listEnvProfiles());
+      if (selectedProfile === name) handleSelectProfile('');
+    },
+    [selectedProfile, handleSelectProfile],
+  );
+
+  const addProfile = useCallback(async () => {
+    let i = profiles.length + 1;
+    let name = 'New environment';
+    while (profiles.some((p) => p.name === name)) name = `New environment ${i++}`;
+    await saveEnvProfile({ name, vars: {} });
+    setProfiles(await listEnvProfiles());
+    handleSelectProfile(name);
+  }, [profiles, handleSelectProfile]);
 
   useEffect(() => {
     const handler = (msg: unknown) => {
@@ -153,11 +210,13 @@ export default function RunView({ onEdit }: RunViewProps) {
         }
         setRunTabId(tab.id);
         runTabIdRef.current = tab.id;
+        const profile = profiles.find((p) => p.name === selectedProfile);
         await browser.runtime.sendMessage({
           type: 'aitomate:runner:play',
           tabId: tab.id,
           scenario: entry.scenario,
           baseUrl: baseUrl || undefined,
+          envVars: profile && Object.keys(profile.vars).length > 0 ? profile.vars : undefined,
         } as RunnerCommand);
       } catch (err) {
         setImportError(String(err));
@@ -165,7 +224,7 @@ export default function RunView({ onEdit }: RunViewProps) {
         setRunTabId(null);
       }
     },
-    [baseUrl],
+    [baseUrl, profiles, selectedProfile],
   );
 
   const handleStopRun = useCallback(async () => {
@@ -208,17 +267,19 @@ export default function RunView({ onEdit }: RunViewProps) {
       }
       setRunTabId(tab.id);
       runTabIdRef.current = tab.id;
+      const profile = profiles.find((p) => p.name === selectedProfile);
       await browser.runtime.sendMessage({
         type: 'aitomate:runner:play-suite',
         tabId: tab.id,
         scenarioRefs: scenarios.map((s) => ({ id: s.id, name: s.name })),
         baseUrl: baseUrl || undefined,
+        envVars: profile && Object.keys(profile.vars).length > 0 ? profile.vars : undefined,
       } as RunnerCommand);
     } catch (err) {
       setImportError(String(err));
       setSuiteRunning(false);
     }
-  }, [scenarios, baseUrl]);
+  }, [scenarios, baseUrl, profiles, selectedProfile]);
 
   const handleStopSuite = useCallback(async () => {
     const tabId = runTabIdRef.current ?? runTabId;
@@ -362,7 +423,7 @@ export default function RunView({ onEdit }: RunViewProps) {
           </div>
         )}
 
-        {/* Base URL Configuration Bar */}
+        {/* Base URL & Environment Configuration Bar */}
         <div
           className="ait-card"
           style={{ padding: '10px 12px', marginBottom: 14, background: 'var(--bg-surface)' }}
@@ -378,6 +439,59 @@ export default function RunView({ onEdit }: RunViewProps) {
             className="ait-input"
             style={{ fontSize: 11, padding: '5px 8px' }}
           />
+
+          {/* Environment profiles (FR-3, T2.14) — named variable maps resolved
+              into {{VAR}} placeholders at run time. Plain data, never secrets. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>Environment</span>
+            <select
+              value={selectedProfile}
+              onChange={(e) => handleSelectProfile(e.target.value)}
+              className="ait-input"
+              style={{ fontSize: 11, padding: '4px 6px', flex: 1 }}
+              disabled={suiteRunning || runningId !== null}
+            >
+              <option value="">(none)</option>
+              {profiles.map((p) => (
+                <option key={p.name} value={p.name}>{p.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowProfileManager((v) => !v)}
+              disabled={suiteRunning || runningId !== null}
+              className="ait-btn ait-btn-secondary ait-btn-sm"
+              style={{ fontSize: 10, padding: '3px 8px' }}
+            >
+              {showProfileManager ? 'Hide' : 'Manage'}
+            </button>
+          </div>
+
+          {showProfileManager && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {profiles.length === 0 && (
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                  No environments yet. Add one to fill placeholders like {'{{API_HOST}}'} in navigate URLs.
+                </div>
+              )}
+              {profiles.map((p) => (
+                <ProfileEditor
+                  key={p.name}
+                  profile={p}
+                  isSelected={selectedProfile === p.name}
+                  onSelect={handleSelectProfile}
+                  onCommit={commitProfile}
+                  onDelete={removeProfile}
+                />
+              ))}
+              <button
+                onClick={() => void addProfile()}
+                className="ait-btn ait-btn-secondary ait-btn-sm"
+                style={{ alignSelf: 'flex-start', fontSize: 10, padding: '3px 8px' }}
+              >
+                + Add environment
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Scenarios List */}
@@ -861,5 +975,138 @@ export default function RunView({ onEdit }: RunViewProps) {
         )}
       </section>
     </>
+  );
+}
+
+interface ProfileEditorProps {
+  profile: EnvProfile;
+  isSelected: boolean;
+  onSelect: (name: string) => void;
+  /** Commits the draft (rename = save new + delete old). Returns false when
+   * rejected, e.g. a duplicate target name — the editor then keeps its
+   * previously saved name. */
+  onCommit: (next: EnvProfile, previousName: string) => Promise<boolean>;
+  onDelete: (name: string) => Promise<void>;
+}
+
+/**
+ * Inline editor for one environment profile (T2.14). Edits stay in local
+ * state and commit on blur / structural change, so typing doesn't write to
+ * storage on every keystroke. Variables are plain NAME=value pairs resolved
+ * into {{VAR}} placeholders at run time.
+ */
+function ProfileEditor({ profile, isSelected, onSelect, onCommit, onDelete }: ProfileEditorProps) {
+  const [draftName, setDraftName] = useState(profile.name);
+  const [rows, setRows] = useState<{ key: string; value: string }[]>(
+    Object.entries(profile.vars).map(([key, value]) => ({ key, value })),
+  );
+  const savedNameRef = useRef(profile.name);
+  useEffect(() => {
+    setDraftName(profile.name);
+    savedNameRef.current = profile.name;
+    setRows(Object.entries(profile.vars).map(([key, value]) => ({ key, value })));
+  }, [profile]);
+
+  const toVars = (rowsToConvert: { key: string; value: string }[]): Record<string, string> => {
+    const vars: Record<string, string> = {};
+    for (const row of rowsToConvert) {
+      const key = row.key.trim();
+      if (key) vars[key] = row.value;
+    }
+    return vars;
+  };
+
+  const commitRows = (nextRows: { key: string; value: string }[], nextName?: string) => {
+    const name = (nextName ?? draftName).trim();
+    if (!name) return;
+    const next: EnvProfile = { name, vars: toVars(nextRows) };
+    void onCommit(next, savedNameRef.current).then((ok) => {
+      if (ok) savedNameRef.current = name;
+    });
+  };
+
+  const commit = () => commitRows(rows);
+
+  return (
+    <div
+      className="ait-card"
+      style={{
+        padding: '8px 10px',
+        background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-surface)',
+        borderColor: isSelected ? 'var(--accent-primary)' : 'var(--border-subtle)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <input
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={() => commit()}
+          className="ait-input"
+          style={{ fontSize: 11, padding: '4px 6px', flex: 1, fontWeight: 600 }}
+          aria-label="Environment name"
+        />
+        <button
+          onClick={() => onSelect(savedNameRef.current)}
+          disabled={isSelected}
+          className={`ait-btn ait-btn-sm ${isSelected ? 'ait-btn-primary' : 'ait-btn-secondary'}`}
+          style={{ fontSize: 10, padding: '3px 8px' }}
+        >
+          {isSelected ? 'In use ✓' : 'Use'}
+        </button>
+        <button
+          onClick={() => void onDelete(savedNameRef.current)}
+          title="Delete this environment"
+          className="ait-btn ait-btn-secondary ait-btn-icon"
+        >
+          <IconTrash size={12} color="var(--status-error)" />
+        </button>
+      </div>
+      {rows.map((row, idx) => (
+        <div key={idx} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+          <input
+            value={row.key}
+            onChange={(e) => {
+              const next = rows.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r));
+              setRows(next);
+            }}
+            onBlur={() => commit()}
+            placeholder="VARIABLE_NAME"
+            aria-label="Variable name"
+            className="ait-input"
+            style={{ fontSize: 10, padding: '3px 6px', width: '42%', fontFamily: 'monospace' }}
+          />
+          <input
+            value={row.value}
+            onChange={(e) => {
+              const next = rows.map((r, i) => (i === idx ? { ...r, value: e.target.value } : r));
+              setRows(next);
+            }}
+            onBlur={() => commit()}
+            placeholder="value"
+            aria-label="Variable value"
+            className="ait-input"
+            style={{ fontSize: 10, padding: '3px 6px', flex: 1, fontFamily: 'monospace' }}
+          />
+          <button
+            onClick={() => {
+              const next = rows.filter((_, i) => i !== idx);
+              setRows(next);
+              commitRows(next);
+            }}
+            title="Remove this variable"
+            className="ait-btn ait-btn-secondary ait-btn-icon"
+          >
+            <IconCross size={11} color="var(--text-secondary)" />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={() => setRows([...rows, { key: '', value: '' }])}
+        className="ait-btn ait-btn-ghost ait-btn-sm"
+        style={{ fontSize: 10, padding: '2px 6px' }}
+      >
+        + Add variable
+      </button>
+    </div>
   );
 }

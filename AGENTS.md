@@ -4,7 +4,7 @@ Browser extension for collaborative, AI-assisted test automation. Works on any
 web app (server-rendered or SPA); Laravel apps are the reference targets, not a
 dependency.
 
-**Source of truth: `aitomate-spec-kit.md` (v0.3.6).** If anything here or in a
+**Source of truth: `aitomate-spec-kit.md` (v0.3.7).** If anything here or in a
 conversation contradicts the spec, the spec wins. Update the spec when a design
 decision changes; bump its version and changelog.
 
@@ -36,33 +36,17 @@ Full narrative history, rationale, and bug post-mortems per task:
   probe + honest step timing (runner reliability) · FR-5 run-report capture
   (screenshot on failure, page/network errors — MAIN-world capture script +
   postMessage relay, `webRequest` observation) · navigate-step placeholder
-  guard generalized (any unresolved `{{...}}`, not just `{{BASE_URL}}`).
-- Next: T2.14 Environment profiles (FR-3 gap: generalize `{{BASE_URL}}` into
-  named env profiles with a Run view selector — see `docs/decisions.md` §
-  Navigate-step placeholder guard generalized); remaining spec §4 milestone
-  items (Milestone 2: database/bridge, Milestone 3: plugins & release — see
-  spec §4).
+  guard generalized (any unresolved `{{...}}`, not just `{{BASE_URL}}`) ·
+  plain-language error mapping (run-failure path: content-script
+  unreachable + `net::ERR_*` codes classified in `lib/runner/plain-error.ts`) ·
+  §3.7 third smoke case (bundled static-only scenario runs green against
+  `examples/demo-ssr`, self-served on 8081 by the Playwright harness) ·
+  Environment profiles (T2.14 — named non-secret profiles, Run view
+  selector + manager, generalized `{{VAR}}` substitution in navigate URLs).
+- Next: T4.6 Unfocused run (FR-5 gap: run in a non-active tab — see
+  spec-kit 0.3.7); remaining spec §4 milestone items (Milestone 2:
+  database/bridge, Milestone 3: plugins & release — see spec §4).
 - Task list and milestone breakdown: spec §4.
-
-### Open grilling items (agreed in review, not yet done)
-
-Found during the spec-vs-code grilling session; each is a real gap, not
-bookkeeping. Status as of spec-kit 0.3.5 / commit b734475.
-
-1. **§3.7 third e2e smoke case still absent.** `smoke.spec.ts`'s comment
-   still says the bundled-static-scenario-runs-green case "lands once the
-   runner + a demo target exist" — both exist. The Playwright harness must
-   self-serve `examples/demo-ssr` on 8081 (a real run already passes green,
-   verified via a temp repro spec, since deleted).
-2. **Plain-language error mapping (Constitution: fail loud, fail clear).**
-   Raw browser errors still reach PO-facing surfaces: the runner fail-fast
-   message embeds "Could not establish connection. Receiving end does not
-   exist." and the report UI shows "Network failure (net::ERR_...)".
-   Needs a small error classifier on the run-failure path.
-
-## Commands
-
-Run from repo root (pnpm workspaces):
 
 | Command | What |
 |---|---|
@@ -290,8 +274,9 @@ own diff against this list before calling a task done.
   loading the built extension via `--load-extension` (needs `--headless=new`
   for the MV3 background service worker to start under headless Chromium).
   Covers: extension loads (manifest + service worker), popup renders the
-  Build/Run/Settings shell. Chromium-only; Firefox is a manual pre-release
-  check. A third smoke case — a bundled static-only scenario running green
-  against a local demo page — lands once the runner + a demo target exist.
+  Build/Run/Settings shell, and a bundled static-only scenario runs green
+  against `examples/demo-ssr` (self-served on 8081 by
+  `e2e/serve-demo.mjs` via Playwright `webServer` — dev-only fixture, never
+  used in prod). Chromium-only; Firefox is a manual pre-release check.
 - Definition of done for engine tasks: unit tests included, `pnpm test`,
   `pnpm typecheck`, and `pnpm build` all pass.

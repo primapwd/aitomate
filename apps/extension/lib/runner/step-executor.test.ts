@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
+import type { Browser } from 'wxt/browser';
 import {
   calculateBackoff,
   DEFAULT_BACKOFF_MS,
@@ -145,6 +146,9 @@ describe('executeStepWithRetry', () => {
     // on a page that will never answer just burns backoff time.
     expect(result.attempts).toBe(1);
     expect(result.error).toContain('content script could not be reached');
+    // Plain-language guarantee (Constitution): the raw Chrome error must
+    // not leak into the PO-facing message.
+    expect(result.error).not.toContain('Receiving end does not exist');
     // The probe phase elapsed — the timing is honest now.
     expect(result.durationMs).toBe(300);
   });
@@ -360,40 +364,96 @@ describe('executeStepWithRetry', () => {
     const update = vi.spyOn(browser.tabs, 'update').mockResolvedValue({} as any);
 
     const result = await executeStepWithRetry(TAB_ID, navigateStep, undefined, undefined, 'http://localhost:8080');
-
     expect(result.passed).toBe(false);
     expect(result.error).toContain('{{APP_URL}}');
+  });
+
+  it('resolves profile variables into navigate URLs (T2.14)', async () => {
+    // tabs.update/get have callback-style overload tails typed `void`, so
+    // mockResolvedValue rejects the Tab value — mockImplementation's return
+    // is assignable regardless (TS void-return assignability).
+    const update = vi.spyOn(browser.tabs, 'update').mockImplementation(() =>
+      Promise.resolve({ id: TAB_ID } as Browser.tabs.Tab),
+    );
+    vi.spyOn(browser.tabs, 'get').mockImplementation(() =>
+      Promise.resolve({ status: 'complete' } as Browser.tabs.Tab),
+    );
+
+    const navigateStep = makeStep({ action: 'navigate', url: '{{API_HOST}}/checkout' });
+    const result = await executeStepWithRetry(TAB_ID, navigateStep, undefined, undefined, undefined, {
+      API_HOST: 'https://api.staging.test',
+    });
+
+    expect(result.passed).toBe(true);
+    expect(update).toHaveBeenCalledWith(TAB_ID, { url: 'https://api.staging.test/checkout' });
+  });
+
+  it('fails loud pointing at the environment profile when a variable is undefined', async () => {
+    const update = vi.spyOn(browser.tabs, 'update').mockImplementation(() =>
+      Promise.resolve({ id: TAB_ID } as Browser.tabs.Tab),
+    );
+
+    const navigateStep = makeStep({ action: 'navigate', url: '{{API_HOST}}/checkout' });
+    const result = await executeStepWithRetry(TAB_ID, navigateStep);
+
     expect(update).not.toHaveBeenCalled();
+    expect(result.passed).toBe(false);
+    expect(result.error).toContain('{{API_HOST}}');
+    expect(result.error).toContain('environment profile');
+  });
+
+  it('resolves a composed base URL that itself contains placeholders', async () => {
+    const update = vi.spyOn(browser.tabs, 'update').mockImplementation(() =>
+      Promise.resolve({ id: TAB_ID } as Browser.tabs.Tab),
+    );
+    vi.spyOn(browser.tabs, 'get').mockImplementation(() =>
+      Promise.resolve({ status: 'complete' } as Browser.tabs.Tab),
+    );
+
+    const navigateStep = makeStep({ action: 'navigate', url: '{{BASE_URL}}/checkout' });
+    const result = await executeStepWithRetry(TAB_ID, navigateStep, undefined, undefined, 'https://{{API_HOST}}/app', {
+      API_HOST: 'api.staging.test',
+    });
+
+    expect(result.passed).toBe(true);
+    expect(update).toHaveBeenCalledWith(TAB_ID, { url: 'https://api.staging.test/app/checkout' });
   });
 });
 
 describe('resolveUrl', () => {
-  it('returns the url unchanged when no baseUrl is given', () => {
+  it('returns the url unchanged when no variable map is given', () => {
     expect(resolveUrl('{{BASE_URL}}/checkout')).toBe('{{BASE_URL}}/checkout');
   });
 
   it('returns the url unchanged when it has no placeholder', () => {
-    expect(resolveUrl('/checkout', 'http://localhost:8080')).toBe('/checkout');
+    expect(resolveUrl('/checkout', { BASE_URL: 'http://localhost:8080' })).toBe('/checkout');
   });
 
-  it('substitutes {{BASE_URL}}, stripping a trailing slash from baseUrl', () => {
-    expect(resolveUrl('{{BASE_URL}}/checkout', 'http://localhost:8080/')).toBe(
+  it('substitutes {{BASE_URL}} from the map', () => {
+    expect(resolveUrl('{{BASE_URL}}/checkout', { BASE_URL: 'http://localhost:8080' })).toBe(
       'http://localhost:8080/checkout',
     );
   });
 
-  it('substitutes every occurrence of the placeholder', () => {
-    expect(resolveUrl('{{BASE_URL}}/a?next={{BASE_URL}}/b', 'http://x.test')).toBe(
-      'http://x.test/a?next=http://x.test/b',
-    );
+  it('substitutes every occurrence of every known placeholder (T2.14)', () => {
+    expect(
+      resolveUrl('{{BASE_URL}}/a?host={{API_HOST}}&next={{BASE_URL}}/b', {
+        BASE_URL: 'http://x.test',
+        API_HOST: 'api.x.test',
+      }),
+    ).toBe('http://x.test/a?host=api.x.test&next=http://x.test/b');
   });
 
-  it('treats a baseUrl containing "$" as literal text, not a replace-pattern', () => {
+  it('leaves unknown tokens intact — the navigation guard fails loud on them', () => {
+    expect(resolveUrl('{{APP_URL}}/x', { BASE_URL: 'http://x.test' })).toBe('{{APP_URL}}/x');
+  });
+
+  it('treats values containing "$" as literal text, not a replace-pattern', () => {
     // String.prototype.replace treats "$&"/"$$"/"$`"/"$'" specially when the
-    // replacement is a string — resolveUrl must not let a base URL
-    // containing "$" (e.g. basic-auth creds, a "$"-bearing query param)
-    // corrupt the result.
-    expect(resolveUrl('{{BASE_URL}}/x', 'http://u:p$&ss@host')).toBe(
+    // replacement is a string — resolveUrl must not let a value containing
+    // "$" (e.g. basic-auth creds, a "$"-bearing query param) corrupt the
+    // result.
+    expect(resolveUrl('{{BASE_URL}}/x', { BASE_URL: 'http://u:p$&ss@host' })).toBe(
       'http://u:p$&ss@host/x',
     );
   });
