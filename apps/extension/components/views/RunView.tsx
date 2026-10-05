@@ -16,6 +16,7 @@ import OnboardingWizard from '@/components/OnboardingWizard';
 import type { RunnerCommand, RunnerRunReportMessage, RunnerStateMessage, RunnerStepResultMessage, RunnerSuiteStateMessage } from '@/lib/runner/messages';
 import type { StepResult } from '@/lib/runner/messages';
 import type { SuiteReport } from '@/lib/runner/suite';
+import { createBackgroundRunTab } from '@/lib/runner/run-target';
 import { getUiPrefs, setUiPref } from '@/lib/ui-prefs';
 import {
   deleteEnvProfile,
@@ -51,6 +52,7 @@ export default function RunView({ onEdit }: RunViewProps) {
   const [baseUrl, setBaseUrl] = useState('');
   const [profiles, setProfiles] = useState<EnvProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState('');
+  const [unfocusedRun, setUnfocusedRun] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [runTabId, setRunTabId] = useState<number | null>(null);
   const [suiteRunning, setSuiteRunning] = useState(false);
@@ -202,18 +204,15 @@ export default function RunView({ onEdit }: RunViewProps) {
       setStepProgress(null);
       setStepResults({});
       try {
-        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-        if (!tab?.id) {
-          setImportError('No active tab found. Open a page first.');
-          setRunningId(null);
-          return;
-        }
-        setRunTabId(tab.id);
-        runTabIdRef.current = tab.id;
+        const [activeTab] = unfocusedRun ? [] : await browser.tabs.query({ active: true, currentWindow: true });
+        const tabId = unfocusedRun ? await createBackgroundRunTab() : activeTab?.id;
+        if (tabId === undefined) throw new Error('No active tab found. Open a page first.');
+        setRunTabId(tabId);
+        runTabIdRef.current = tabId;
         const profile = profiles.find((p) => p.name === selectedProfile);
         await browser.runtime.sendMessage({
           type: 'aitomate:runner:play',
-          tabId: tab.id,
+          tabId,
           scenario: entry.scenario,
           baseUrl: baseUrl || undefined,
           envVars: profile && Object.keys(profile.vars).length > 0 ? profile.vars : undefined,
@@ -224,7 +223,7 @@ export default function RunView({ onEdit }: RunViewProps) {
         setRunTabId(null);
       }
     },
-    [baseUrl, profiles, selectedProfile],
+    [baseUrl, profiles, selectedProfile, unfocusedRun],
   );
 
   const handleStopRun = useCallback(async () => {
@@ -259,18 +258,15 @@ export default function RunView({ onEdit }: RunViewProps) {
     setSuiteRunning(true);
     setStepProgress(null);
     try {
-      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.id) {
-        setImportError('No active tab found. Open a page first.');
-        setSuiteRunning(false);
-        return;
-      }
-      setRunTabId(tab.id);
-      runTabIdRef.current = tab.id;
+      const [activeTab] = unfocusedRun ? [] : await browser.tabs.query({ active: true, currentWindow: true });
+      const tabId = unfocusedRun ? await createBackgroundRunTab() : activeTab?.id;
+      if (tabId === undefined) throw new Error('No active tab found. Open a page first.');
+      setRunTabId(tabId);
+      runTabIdRef.current = tabId;
       const profile = profiles.find((p) => p.name === selectedProfile);
       await browser.runtime.sendMessage({
         type: 'aitomate:runner:play-suite',
-        tabId: tab.id,
+        tabId,
         scenarioRefs: scenarios.map((s) => ({ id: s.id, name: s.name })),
         baseUrl: baseUrl || undefined,
         envVars: profile && Object.keys(profile.vars).length > 0 ? profile.vars : undefined,
@@ -279,7 +275,7 @@ export default function RunView({ onEdit }: RunViewProps) {
       setImportError(String(err));
       setSuiteRunning(false);
     }
-  }, [scenarios, baseUrl, profiles, selectedProfile]);
+  }, [scenarios, baseUrl, profiles, selectedProfile, unfocusedRun]);
 
   const handleStopSuite = useCallback(async () => {
     const tabId = runTabIdRef.current ?? runTabId;
@@ -439,6 +435,16 @@ export default function RunView({ onEdit }: RunViewProps) {
             className="ait-input"
             style={{ fontSize: 11, padding: '5px 8px' }}
           />
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9, fontSize: 11, color: 'var(--text-primary)' }}>
+            <input
+              type="checkbox"
+              checked={unfocusedRun}
+              onChange={(event) => setUnfocusedRun(event.target.checked)}
+              disabled={suiteRunning || runningId !== null}
+            />
+            Run in background tab
+          </label>
 
           {/* Environment profiles (FR-3, T2.14) — named variable maps resolved
               into {{VAR}} placeholders at run time. Plain data, never secrets. */}

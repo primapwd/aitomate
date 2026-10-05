@@ -5,6 +5,18 @@ and fixed along the way — the "why" behind design choices, not just the
 "what". `AGENTS.md`'s Status section links here; keep that section to
 one-liners and put narrative detail here instead.
 
+- T4.6 unfocused runs: Run view optionally creates a new inactive tab at the
+  current active page URL for either one scenario or a suite. This preserves
+  the browser's authenticated session and supports scenarios that begin with
+  page interactions rather than navigation; it does not copy in-memory SPA
+  state. The tab remains open after completion for inspection. Progress and
+  reports already carried `tabId`, so the existing runner channel serves the
+  background tab. `captureVisibleTab` can capture only the foreground tab, so
+  `captureTabScreenshot` now verifies the target is active and omits the
+  screenshot for background runs rather than risking attaching the user's
+  unrelated page to a report. Background execution remains best-effort because
+  browsers may throttle inactive tabs.
+
 - T1.1 scaffold.
 - T1.2 scenario schema + tests.
 - T1.3 encrypted vault in `apps/extension/lib/vault/` + Vitest/WxtVitest infra.

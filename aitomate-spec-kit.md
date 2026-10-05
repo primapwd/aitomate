@@ -1,11 +1,19 @@
 # Spec-Kit: Aitomate
 ### Browser Extension for Collaborative, AI-Assisted Test Automation
 
-Version: 0.3.7 (Draft)
-Date: 2026-08-25
+Version: 0.3.8 (Draft)
+Date: 2026-10-05
 Author: Prima Putra
 Target build method: Spec-Driven Development (SDD) with Claude Code / Codex / OpenCode
 
+> Changelog 0.3.8: T4.6 implemented — Run view can run a scenario or suite in a
+> newly created inactive tab, opened at the current page URL to retain the
+> authenticated browser session and support scenarios without an initial
+> navigate step. Navigation continues in that inactive tab; the tab remains
+> open for inspection. Failure screenshots are omitted for inactive runs
+> because `captureVisibleTab` can only capture the active tab and must not
+> attach an unrelated foreground page to the report.
+>
 > Changelog 0.3.7: (1) completeness audit against §4 found FR-5's "unfocused
 > run" mode (execute a scenario in a non-active tab so the user can keep
 > working in another window) was never built and never tracked — the Run
@@ -310,10 +318,12 @@ arbitrary TypeScript plugins at runtime. Therefore:
 
 #### FR-5: Execution & Reporting
 - Run modes: single scenario, suite (sequential).
-- Runs execute in a real browser tab. An "unfocused run" mode executes in a
-  non-active tab so the user can keep working in another window — this is
-  best-effort background execution, **not** true headless (MV3 requires a live
-  tab for content scripts).
+- Optional "Run in background tab" mode opens an inactive tab at the current
+  page URL. Navigate steps stay in that tab; it remains open after the run for
+  inspection. This is best-effort background execution, **not** true headless
+  (MV3 requires a live tab for content scripts). Failure screenshots are
+  unavailable for background runs because the browser API captures only the
+  active tab.
 - Each run produces a report: step-by-step pass/fail, screenshot on failure,
   console/network error capture, duration.
 - Reports exportable as JSON/HTML for attaching to bug tickets.
@@ -813,17 +823,14 @@ Each task is scoped to be handed independently to an AI coding agent.
 - [x] T4.3: Export report as JSON/HTML.
 - [x] T4.4: First-run onboarding wizard (zero-setup static path).
 - [x] T4.5: Firefox/Edge build verification + polyfill audit.
-- [ ] T4.6: Unfocused run (FR-5) — execute a scenario in a *non-active*
-  tab so the user can keep working elsewhere while the run proceeds
-  (best-effort background execution per FR-5, not true headless — MV3
-  needs a live tab for content scripts). Today the Run view targets
-  `tabs.query({ active: true, currentWindow: true })` unconditionally, so
-  a run always drives the focused tab and steals focus through every
-  navigate step. Design questions: tab acquisition (reuse an existing
-  non-active tab vs open a pinned/background tab), focus-stealing during
-  navigation (`tabs.update` may activate the tab), and how the Run view
-  reports progress for a tab it isn't watching. Gap found 0.3.7 — the mode
-  was claimed in FR-5 since 0.2.0 but never built nor tracked.
+- [x] T4.6: Unfocused run (FR-5) — execute a scenario in a *non-active*
+  tab so the user can keep working elsewhere while the run proceeds. The
+  Run view offers an optional background-tab mode for single scenarios and
+  suites. It opens an inactive tab at the active page URL, retains it after
+  the run for inspection, and uses the existing tabId-tagged progress/report
+  messages. Execution is best-effort, not headless; failure screenshots are
+  omitted for inactive runs because the browser API captures only the active
+  tab. Implemented 0.3.8.
 
 ### Milestone 2 — Database & Team Config
 - [ ] T5.1: `packages/bridge` → `aitomate-bridge` CLI: connector profiles,
@@ -930,5 +937,5 @@ Notes:
 
 ---
 
-*End of Spec-Kit v0.3.7 — update this file as decisions are made; treat it as
+*End of Spec-Kit v0.3.8 — update this file as decisions are made; treat it as
 the source of truth for AI coding agents working on this project.*

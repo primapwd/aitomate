@@ -200,8 +200,9 @@ describe('capture storage', () => {
 describe('captureTabScreenshot', () => {
   it('returns undefined when captureVisibleTab fails', async () => {
     vi.spyOn(browser.tabs, 'get').mockResolvedValue({
-      windowId: 7,
+      id: TAB_ID, windowId: 7,
     } as unknown as Awaited<ReturnType<typeof browser.tabs.get>>);
+    vi.spyOn(browser.tabs, 'query').mockResolvedValue([{ id: TAB_ID }] as never);
     vi.spyOn(browser.tabs, 'captureVisibleTab').mockRejectedValue(
       new Error('Not allowed'),
     );
@@ -212,8 +213,9 @@ describe('captureTabScreenshot', () => {
 
   it('returns the captured data URL', async () => {
     vi.spyOn(browser.tabs, 'get').mockResolvedValue({
-      windowId: 7,
+      id: TAB_ID, windowId: 7,
     } as unknown as Awaited<ReturnType<typeof browser.tabs.get>>);
+    vi.spyOn(browser.tabs, 'query').mockResolvedValue([{ id: TAB_ID }] as never);
     // The fake-browser stub types captureVisibleTab as void-returning; the
     // real API returns a Promise<string> — cast the value, not the spy.
     const captureVisibleTab = vi.spyOn(browser.tabs, 'captureVisibleTab');
@@ -222,5 +224,15 @@ describe('captureTabScreenshot', () => {
     const shot = await captureTabScreenshot(TAB_ID);
     expect(shot).toBe('data:image/png;base64,AAAA');
     expect(captureVisibleTab).toHaveBeenCalledWith(7, { format: 'png' });
+  });
+
+  it('does not capture the foreground page for an inactive run tab', async () => {
+    vi.spyOn(browser.tabs, 'get').mockResolvedValue({ id: TAB_ID, windowId: 7 } as never);
+    vi.spyOn(browser.tabs, 'query').mockResolvedValue([{ id: TAB_ID + 1 }] as never);
+    const captureVisibleTab = vi.spyOn(browser.tabs, 'captureVisibleTab');
+    captureVisibleTab.mockClear();
+
+    await expect(captureTabScreenshot(TAB_ID)).resolves.toBeUndefined();
+    expect(captureVisibleTab).not.toHaveBeenCalled();
   });
 });

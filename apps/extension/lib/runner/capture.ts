@@ -145,6 +145,11 @@ export async function captureTabScreenshot(
   try {
     const tab = await browser.tabs.get(tabId);
     if (!tab.windowId) return undefined;
+    // captureVisibleTab captures the currently active tab in a window, not an
+    // arbitrary tabId. Never attach the user's unrelated foreground page to
+    // a background run's report.
+    const [activeTab] = await browser.tabs.query({ active: true, windowId: tab.windowId });
+    if (activeTab?.id !== tabId) return undefined;
     return await browser.tabs.captureVisibleTab(tab.windowId, {
       format: 'png',
     });

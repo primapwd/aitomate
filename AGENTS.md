@@ -4,7 +4,7 @@ Browser extension for collaborative, AI-assisted test automation. Works on any
 web app (server-rendered or SPA); Laravel apps are the reference targets, not a
 dependency.
 
-**Source of truth: `aitomate-spec-kit.md` (v0.3.7).** If anything here or in a
+**Source of truth: `aitomate-spec-kit.md` (v0.3.8).** If anything here or in a
 conversation contradicts the spec, the spec wins. Update the spec when a design
 decision changes; bump its version and changelog.
 
@@ -43,8 +43,8 @@ Full narrative history, rationale, and bug post-mortems per task:
   `examples/demo-ssr`, self-served on 8081 by the Playwright harness) ·
   Environment profiles (T2.14 — named non-secret profiles, Run view
   selector + manager, generalized `{{VAR}}` substitution in navigate URLs).
-- Next: T4.6 Unfocused run (FR-5 gap: run in a non-active tab — see
-  spec-kit 0.3.7); remaining spec §4 milestone items (Milestone 2:
+- Done: T4.6 unfocused run (FR-5 — optional inactive run tab).
+- Next: remaining spec §4 milestone items (Milestone 2:
   database/bridge, Milestone 3: plugins & release — see spec §4).
 - Task list and milestone breakdown: spec §4.
 
